@@ -1,22 +1,44 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { useCoinbase } from "@/hooks/use-coinbase"
+import {
+  TrendingUp,
+  TrendingDown,
+  Search,
+  Plus,
+  X,
+  RotateCcw,
+  Flag,
+  Pause,
+  Activity,
+  Clock,
+  Trophy,
+  Zap,
+  MoreHorizontal,
+  LineChart,
+  LayoutList,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { SearchIcon, Plus, X, RotateCcw, Flag, Pause, MoreHorizontal, LineChart, LayoutList } from "lucide-react"
-import { Inter } from "next/font/google"
-
-const inter = Inter({ subsets: ["latin"] })
 
 // Types
 interface CoinData {
   id: string
   symbol: string
   name: string
+  coinbaseId: string
   currentPrice: number
   startPrice: number
   changesSinceStart: number
@@ -36,19 +58,36 @@ interface WatchlistData {
 
 type TimeFrame = "1min" | "5min" | "15min" | "1h" | "1d"
 
-// Mock data (kept for demo)
-const MOCK_COINS = [
-  { symbol: "BTCUSDT", name: "Bitcoin", basePrice: 67234.56 },
-  { symbol: "ETHUSDT", name: "Ethereum", basePrice: 3456.78 },
-  { symbol: "SOLUSDT", name: "Solana", basePrice: 189.45 },
-  { symbol: "ADAUSDT", name: "Cardano", basePrice: 0.4567 },
-  { symbol: "DOGEUSDT", name: "Dogecoin", basePrice: 0.0847 },
-  { symbol: "AVAXUSDT", name: "Avalanche", basePrice: 34.56 },
-  { symbol: "UNIUSDT", name: "Uniswap", basePrice: 8.42 },
-  { symbol: "LINKUSDT", name: "Chainlink", basePrice: 14.23 },
+// Real crypto data with Coinbase product IDs
+const REAL_COINS = [
+  { symbol: "BTC-USD", name: "Bitcoin", basePrice: 67234.56, coinbaseId: "BTC-USD" },
+  { symbol: "ETH-USD", name: "Ethereum", basePrice: 3456.78, coinbaseId: "ETH-USD" },
+  { symbol: "SOL-USD", name: "Solana", basePrice: 189.45, coinbaseId: "SOL-USD" },
+  { symbol: "ADA-USD", name: "Cardano", basePrice: 0.4567, coinbaseId: "ADA-USD" },
+  { symbol: "DOGE-USD", name: "Dogecoin", basePrice: 0.0847, coinbaseId: "DOGE-USD" },
+  { symbol: "AVAX-USD", name: "Avalanche", basePrice: 34.56, coinbaseId: "AVAX-USD" },
+  { symbol: "UNI-USD", name: "Uniswap", basePrice: 8.42, coinbaseId: "UNI-USD" },
+  { symbol: "LINK-USD", name: "Chainlink", basePrice: 14.23, coinbaseId: "LINK-USD" },
 ]
 
-const COIN_COLORS = ["#8b5cf6", "#00d9ff", "#00ff88", "#ff007f", "#ffaa00", "#9d4edd", "#ec4899", "#06b6d4"]
+const COIN_COLORS = ["#9C6BFF", "#00FF88", "#4FD1FF", "#FF4D6D", "#FFAE2B", "#f97316", "#ec4899", "#06b6d4"]
+
+// Brand logo
+function Brand() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--orchid)] to-[var(--rose)] flex items-center justify-center text-white font-bold text-lg brand-shimmer">
+        PD
+      </div>
+      <div className="leading-tight">
+        <div className="text-xl font-bold bg-gradient-to-r from-[var(--text)] to-[var(--orchid)] bg-clip-text text-transparent">
+          PurpDex
+        </div>
+        <div className="text-xs text-[var(--text-muted)]">Live ROC Momentum Tracker</div>
+      </div>
+    </div>
+  )
+}
 
 // Utilities
 const generateCoinId = (symbol: string) => `${symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
@@ -79,76 +118,7 @@ const formatPrice = (price: number): string => {
 
 const formatPercentage = (pct: number): string => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`
 
-// WebSocket-ish mock stream
-const useWebSocket = (symbols: string[], timeFrame: TimeFrame) => {
-  const [data, setData] = useState<Map<string, number>>(new Map())
-  const intervalRef = useRef<NodeJS.Timeout>()
-  const lastUpdateRef = useRef<Map<string, number>>(new Map())
-
-  const getUpdateInterval = (tf: TimeFrame) => {
-    switch (tf) {
-      case "1min":
-        return 800
-      case "5min":
-        return 1400
-      case "15min":
-        return 2000
-      case "1h":
-        return 3500
-      case "1d":
-        return 8000
-      default:
-        return 1000
-    }
-  }
-
-  useEffect(() => {
-    if (symbols.length === 0) {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      return
-    }
-
-    // init new symbols
-    const newSymbols = symbols.filter((s) => !lastUpdateRef.current.has(s))
-    if (newSymbols.length) {
-      const next = new Map(data)
-      newSymbols.forEach((symbol) => {
-        const mock = MOCK_COINS.find((c) => c.symbol === symbol)
-        if (mock) {
-          lastUpdateRef.current.set(symbol, mock.basePrice)
-          next.set(symbol, mock.basePrice)
-        }
-      })
-      setData(next)
-    }
-
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    const interval = getUpdateInterval(timeFrame)
-    intervalRef.current = setInterval(() => {
-      const next = new Map<string, number>()
-      symbols.forEach((symbol) => {
-        const mock = MOCK_COINS.find((c) => c.symbol === symbol)
-        if (!mock) return
-        const volatility = symbol.includes("DOGE") ? 0.005 : symbol.includes("BTC") ? 0.001 : 0.003
-        const change = (Math.random() - 0.5) * volatility
-        const curr = lastUpdateRef.current.get(symbol) ?? mock.basePrice
-        const price = Math.max(curr * (1 + change), mock.basePrice * 0.9)
-        lastUpdateRef.current.set(symbol, price)
-        next.set(symbol, price)
-      })
-      setData(next)
-    }, interval)
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbols.join(","), timeFrame])
-
-  return data
-}
-
-// Chart (kept; styles rely on container background)
+// Chart
 function RaceChart({
   coins,
   startTime,
@@ -183,8 +153,8 @@ function RaceChart({
     const range = Math.max(max - min, 2)
 
     // grid
-    ctx.strokeStyle = "#3a3d4a"
-    ctx.lineWidth = 0.6
+    ctx.strokeStyle = "var(--border)"
+    ctx.lineWidth = 0.5
     ctx.setLineDash([3, 3])
     for (let i = 0; i <= 5; i++) {
       const y = padding + (i / 5) * h
@@ -193,8 +163,8 @@ function RaceChart({
       ctx.lineTo(padding + w, y)
       ctx.stroke()
       const v = max - (i / 5) * range
-      ctx.fillStyle = "#a3a3a3"
-      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace"
+      ctx.fillStyle = "var(--text-muted)"
+      ctx.font = "10px Inter, ui-monospace, SFMono-Regular, Menlo, monospace"
       ctx.textAlign = "right"
       ctx.fillText(`${v.toFixed(1)}%`, padding - 6, y + 3)
     }
@@ -202,7 +172,7 @@ function RaceChart({
     // zero-line
     const zeroY = padding + ((max - 0) / range) * h
     ctx.setLineDash([])
-    ctx.strokeStyle = "#6b7280"
+    ctx.strokeStyle = "var(--text-muted)"
     ctx.lineWidth = 1.25
     ctx.beginPath()
     ctx.moveTo(padding, zeroY)
@@ -234,16 +204,16 @@ function RaceChart({
       ctx.beginPath()
       ctx.arc(x, y, 3.5, 0, 2 * Math.PI)
       ctx.fill()
-      ctx.fillStyle = "#f8f8f2"
-      ctx.font = "12px ui-sans-serif, system-ui"
+      ctx.fillStyle = "var(--text)"
+      ctx.font = "12px Inter, ui-sans-serif, system-ui"
       ctx.textAlign = "left"
-      ctx.fillText(`${coin.symbol}`, x + 8, y + 4)
+      ctx.fillText(`${coin.symbol.split("-")[0]}`, x + 8, y + 4)
     })
   }, [coins, startTime, timeFrame])
 
   if (!startTime || coins.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-[var(--text-secondary)]">
+      <div className="h-full flex items-center justify-center text-[var(--text-muted)]">
         <div className="text-center">
           <Flag className="h-10 w-10 mx-auto mb-3 opacity-60" />
           <p className="text-sm">Start a race to see the momentum chart</p>
@@ -254,7 +224,7 @@ function RaceChart({
   return <canvas ref={canvasRef} className="w-full h-full" />
 }
 
-// Typeahead Add (PurpDex input styling)
+// Typeahead Add
 function AddCoinTypeahead({
   value,
   onValueChange,
@@ -265,7 +235,7 @@ function AddCoinTypeahead({
   value: string
   onValueChange: (v: string) => void
   existingSymbols: string[]
-  onSelectCoin: (coin: (typeof MOCK_COINS)[number]) => void
+  onSelectCoin: (coin: (typeof REAL_COINS)[number]) => void
   onAddFirstMatch: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -273,7 +243,7 @@ function AddCoinTypeahead({
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase()
     if (!q) return []
-    return MOCK_COINS.filter(
+    return REAL_COINS.filter(
       (c) =>
         !existingSymbols.includes(c.symbol) && (c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
     ).slice(0, 8)
@@ -284,72 +254,73 @@ function AddCoinTypeahead({
   }, [value, filtered.length])
 
   return (
-    <div className="pd-search w-full">
-      <input
-        aria-label="Search coins"
-        placeholder="Search crypto assets — press Enter to add"
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault()
-            onAddFirstMatch()
-          } else if (e.key === "Escape") {
-            onValueChange("")
-            setOpen(false)
-          }
-        }}
-      />
-      <span className="icon">
-        <SearchIcon className="h-4 w-4" />
-      </span>
-      {value && (
-        <button
-          aria-label="Clear search"
-          className="clear"
-          onClick={() => {
-            onValueChange("")
-            setOpen(false)
+    <div className="relative w-[26rem] max-w-full">
+      <div className="relative">
+        <Search
+          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]"
+          aria-hidden="true"
+        />
+        <Input
+          aria-label="Search coins"
+          placeholder="Search coins (e.g., BTC, ETH) — press Enter to add"
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              onAddFirstMatch()
+            } else if (e.key === "Escape") {
+              onValueChange("")
+              setOpen(false)
+            }
           }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-      <Command
-        shouldFilter={false}
-        className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg mt-2"
-      >
-        <CommandInput value={value} onValueChange={onValueChange} placeholder="Filter..." className="hidden" />
-        <CommandList className="max-h-64">
-          {filtered.length === 0 ? (
-            <CommandEmpty className="p-3 text-[var(--text-secondary)]">No coins found</CommandEmpty>
-          ) : (
-            <CommandGroup heading="Matches">
-              {filtered.map((coin) => (
-                <CommandItem
-                  key={coin.symbol}
-                  value={coin.symbol}
-                  onSelect={() => {
-                    onSelectCoin(coin)
-                    onValueChange("")
-                    setOpen(false)
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="size-6 rounded-full bg-[color:var(--bg-tertiary)] text-white text-xs font-semibold grid place-items-center">
-                      {coin.symbol.charAt(0)}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold">{coin.symbol}</span>
-                      <span className="text-[11px] text-[var(--text-secondary)]">{coin.name}</span>
-                    </div>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-        </CommandList>
-      </Command>
+          className="neon-input pl-9 placeholder:text-[var(--text-muted)]"
+        />
+      </div>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <span className="sr-only">Toggle suggestions</span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[26rem] p-0 neon-card">
+          <Command shouldFilter={false} className="bg-transparent">
+            <CommandInput
+              value={value}
+              onValueChange={(v) => onValueChange(v)}
+              placeholder="Filter coins..."
+              className="hidden"
+            />
+            <CommandList className="max-h-64">
+              {filtered.length === 0 ? (
+                <CommandEmpty>No coins found</CommandEmpty>
+              ) : (
+                <CommandGroup heading="Matches">
+                  {filtered.map((coin) => (
+                    <CommandItem
+                      key={coin.symbol}
+                      value={coin.symbol}
+                      onSelect={() => {
+                        onSelectCoin(coin)
+                        onValueChange("")
+                        setOpen(false)
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="size-6 rounded-full bg-gradient-to-br from-[var(--orchid)] to-[var(--ice)] text-white text-xs font-semibold grid place-items-center">
+                          {coin.symbol.split("-")[0].charAt(0)}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-[var(--text)]">{coin.symbol}</span>
+                          <span className="text-[11px] text-[var(--text-muted)]">{coin.name}</span>
+                        </div>
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }
@@ -362,19 +333,37 @@ export default function MomentumTracker() {
   const [isRaceMode, setIsRaceMode] = useState(false)
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("1min")
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table")
+  const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected")
 
   const [query, setQuery] = useState("")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
 
-  const symbols = useMemo(() => watchlistData.coins.map((c) => c.symbol), [watchlistData.coins])
-  const priceData = useWebSocket(symbols, timeFrame)
+  const symbols = useMemo(() => watchlistData.coins.map((c) => c.coinbaseId), [watchlistData.coins])
+  const { book } = useCoinbase(symbols)
+
+  // Update connection status based on data flow
+  useEffect(() => {
+    if (Object.keys(book).length > 0) {
+      setConnectionStatus("connected")
+    } else if (symbols.length > 0) {
+      setConnectionStatus("connecting")
+    } else {
+      setConnectionStatus("disconnected")
+    }
+  }, [book, symbols])
 
   const updateCoins = useCallback(
-    (newPrices: Map<string, number>) => {
+    (priceBook: typeof book) => {
       setWatchlistData((prev) => {
         const coins = prev.coins.map((coin) => {
-          const nextPrice = newPrices.get(coin.symbol)
+          const series = priceBook[coin.coinbaseId]
+          if (!series || series.length === 0) return coin
+
+          const latest = series[series.length - 1]
+          const nextPrice = latest.price
+
           if (!nextPrice || nextPrice === coin.currentPrice) return coin
+
           const now = Date.now()
           const change = calculateChangesSinceStart(nextPrice, coin.startPrice)
           const normalized = isRaceMode ? change : coin.normalizedPrice
@@ -382,6 +371,7 @@ export default function MomentumTracker() {
             ...coin.priceHistory.slice(-100),
             { price: nextPrice, timestamp: now, changesSinceStart: change },
           ]
+
           return {
             ...coin,
             currentPrice: nextPrice,
@@ -399,21 +389,25 @@ export default function MomentumTracker() {
   )
 
   useEffect(() => {
-    if (priceData.size > 0) updateCoins(priceData)
-  }, [priceData, updateCoins])
+    if (Object.keys(book).length > 0) updateCoins(book)
+  }, [book, updateCoins])
 
   const addCoin = useCallback(
-    (coinInfo: (typeof MOCK_COINS)[number]) => {
+    (coinInfo: (typeof REAL_COINS)[number]) => {
       if (watchlistData.coins.some((c) => c.symbol === coinInfo.symbol)) {
         toast({ title: "Already added", description: `${coinInfo.symbol} is already in your watchlist.` })
         return
       }
-      const currentPrice = priceData.get(coinInfo.symbol) ?? coinInfo.basePrice
+
+      const series = book[coinInfo.coinbaseId]
+      const currentPrice = series && series.length > 0 ? series[series.length - 1].price : coinInfo.basePrice
       const now = Date.now()
+
       const newCoin: CoinData = {
         id: generateCoinId(coinInfo.symbol),
         symbol: coinInfo.symbol,
         name: coinInfo.name,
+        coinbaseId: coinInfo.coinbaseId,
         currentPrice,
         startPrice: watchlistData.startTime ? currentPrice : 0,
         changesSinceStart: 0,
@@ -428,7 +422,7 @@ export default function MomentumTracker() {
       setWatchlistData((prev) => ({ ...prev, coins: [...prev.coins, newCoin] }))
       toast({ title: "Coin added", description: `${coinInfo.symbol} added to watchlist.` })
     },
-    [priceData, watchlistData.startTime, watchlistData.coins, toast],
+    [book, watchlistData.startTime, watchlistData.coins, toast],
   )
 
   const addFirstMatch = useCallback(() => {
@@ -437,7 +431,7 @@ export default function MomentumTracker() {
       setIsAddModalOpen(true)
       return
     }
-    const match = MOCK_COINS.find(
+    const match = REAL_COINS.find(
       (c) =>
         !watchlistData.coins.some((x) => x.symbol === c.symbol) &&
         (c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
@@ -520,398 +514,458 @@ export default function MomentumTracker() {
     [sortedCoins],
   )
 
+  const getStatusBadge = (coin: CoinData) => {
+    const change = coin.changesSinceStart
+    if (Math.abs(change) > 5) return { text: "HOT", class: "status-hot" }
+    if (Math.abs(change) > 2) return { text: "ACTIVE", class: "status-active" }
+    if (change > 0) return { text: "POSITIVE", class: "status-positive" }
+    if (change < 0) return { text: "NEGATIVE", class: "status-negative" }
+    return { text: "STABLE", class: "status-neutral" }
+  }
+
   return (
-    <div className={`purpdex-theme ${inter.className}`}>
-      <div className="pd-container">
-        {/* Header */}
-        <header className="pd-header">
-          <div className="pd-brand">
-            <div className="pd-brand-logo">
-              {/* chain-like logo */}
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M8 8L12 4L16 8L12 12L8 8Z" opacity="0.8" />
-                <path d="M8 16L12 12L16 16L12 20L8 16Z" opacity="0.6" />
-                <path d="M4 12L8 8L12 12L8 16L4 12Z" opacity="0.4" />
-                <path d="M12 12L16 8L20 12L16 16L12 12Z" opacity="0.4" />
-              </svg>
-            </div>
-            <div>
-              <div className="pd-brand-title">PurpDex</div>
-              <div className="pd-brand-sub">Rate of Change (ROC) Tracker • Ink Chain</div>
-            </div>
-          </div>
-
-          <div className="hidden md:flex items-center gap-3">
-            <div className="pd-live" style={{ display: isTracking ? "inline-flex" : "none" }}>
-              <span className="pd-live-dot" />
-              TRACKING
-            </div>
-            <Badge
-              variant="outline"
-              className={
-                isRaceMode
-                  ? "border-0 bg-[var(--purple-primary)] text-white"
-                  : isTracking
-                    ? "border-0 bg-[var(--accent-success)] text-[#061d12]"
-                    : "border border-[var(--border-primary)] text-[var(--text-secondary)]"
-              }
-            >
-              {isRaceMode ? "Race Active" : isTracking ? "Tracking" : "Ready"}
-            </Badge>
-          </div>
-        </header>
-
-        {/* Stats */}
-        <div className="roc-stats">
-          <div className="roc-card largest-mover">
-            <div className="roc-card-title">{isRaceMode ? "Race Leader" : "Best Performer"}</div>
-            <div className="roc-card-value">
-              {bestPerformer?.symbol || "N/A"}{" "}
-              {bestPerformer && (
-                <span className={bestPerformer.changesSinceStart >= 0 ? "momentum-positive" : "momentum-negative"}>
-                  {` ${formatPercentage(bestPerformer.changesSinceStart)}`}
-                </span>
-              )}
-            </div>
-            <div className="roc-card-subtitle">{bestPerformer ? "Top performer since start" : "Add coins & start"}</div>
-          </div>
-          <div className="roc-card most-active">
-            <div className="roc-card-title">Most Active</div>
-            <div className="roc-card-value">
-              {fastestMover?.symbol || "N/A"}{" "}
-              {fastestMover && (
-                <span className="momentum-active">{`${fastestMover.rateOfChange.toFixed(2)}%/min`}</span>
-              )}
-            </div>
-            <div className="roc-card-subtitle">Fastest % change/min</div>
-          </div>
-          <div className="roc-card live-tracking">
-            <div className="roc-card-title">{isRaceMode ? "Race Started" : "Tracking Since"}</div>
-            <div className="roc-card-value">
-              {watchlistData.startTime
-                ? new Date(watchlistData.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : "Not Started"}
-            </div>
-            <div className="roc-card-subtitle">
-              {watchlistData.startTime ? `${Math.floor((Date.now() - watchlistData.startTime) / 60000)}m elapsed` : ""}
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="controls-row">
-          <AddCoinTypeahead
-            value={query}
-            onValueChange={setQuery}
-            existingSymbols={watchlistData.coins.map((c) => c.symbol)}
-            onSelectCoin={(coin) => addCoin(coin)}
-            onAddFirstMatch={addFirstMatch}
-          />
-          {!isRaceMode ? (
-            <button
-              onClick={startRace}
-              disabled={watchlistData.coins.length === 0}
-              className="pd-btn pd-btn-start"
-              aria-label="Start Race"
-            >
-              <Flag className="h-4 w-4" />
-              Start ROC
-            </button>
-          ) : (
-            <button onClick={stopRace} className="pd-btn pd-btn-reset" aria-label="Stop Race">
-              <Pause className="h-4 w-4" />
-              Stop Race
-            </button>
-          )}
-          <button
-            onClick={resetTracking}
-            disabled={!isTracking}
-            className="pd-btn pd-btn-reset"
-            aria-label="Reset Tracking"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Reset
-          </button>
-        </div>
-
-        {/* Table/Card wrapper header */}
-        <div className="pd-table-wrap">
-          <div className="pd-table-head">
-            <h3 className="pd-table-title">Assets</h3>
-
-            <div className="flex items-center gap-4">
-              {/* Timeframe segmented (top-right on desktop for chart; here for overall filter look) */}
-              <div className="pd-timeframe hidden md:flex">
-                {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
-                  <button
-                    key={tf}
-                    className={`pd-time-btn ${timeFrame === tf ? "active" : ""}`}
-                    onClick={() => setTimeFrame(tf)}
-                    aria-pressed={timeFrame === tf}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-
-              <div className="pd-view-toggle">
-                <button
-                  className={`pd-view-btn ${activeTab === "table" ? "active" : ""}`}
-                  onClick={() => setActiveTab("table")}
-                >
-                  <LayoutList className="h-4 w-4" />
-                  Table
-                </button>
-                <button
-                  className={`pd-view-btn ${activeTab === "chart" ? "active" : ""}`}
-                  onClick={() => setActiveTab("chart")}
-                >
-                  <LineChart className="h-4 w-4" />
-                  Chart
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Content */}
-          {activeTab === "chart" ? (
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  onClick={() => setActiveTab("table")}
-                >
-                  ← Back to Table
-                </button>
-                <div className="pd-timeframe md:hidden">
-                  {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
-                    <button
-                      key={tf}
-                      className={`pd-time-btn ${timeFrame === tf ? "active" : ""}`}
-                      onClick={() => setTimeFrame(tf)}
-                    >
-                      {tf}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div
-                className="rounded-xl border border-[var(--border-primary)]"
-                style={{
-                  background: "linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary))",
-                  height: "28rem",
-                }}
-              >
-                <RaceChart coins={sortedCoins} startTime={watchlistData.startTime} timeFrame={timeFrame} />
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              {sortedCoins.length > 0 ? (
-                <table className="pd-table">
-                  <thead>
-                    <tr>
-                      <th>Asset</th>
-                      <th className="text-right">Current Price</th>
-                      <th className="text-right" title="Price change since ROC start">
-                        ROC Since Start
-                      </th>
-                      <th className="text-right" title="Current rate of change per minute">
-                        Current ROC Rate
-                      </th>
-                      <th className="text-right" title="24 hour price change">
-                        24h Change
-                      </th>
-                      <th className="text-center" title="Momentum">
-                        Status
-                      </th>
-                      <th className="text-center">Chart</th>
-                      <th className="text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedCoins.map((coin, index) => (
-                      <tr key={coin.id}>
-                        <td>
-                          <div className="pd-asset">
-                            <div
-                              className="pd-asset-icon"
-                              style={{
-                                background: `linear-gradient(135deg, ${COIN_COLORS[index % COIN_COLORS.length]}, #2f323f)`,
-                              }}
-                            >
-                              {coin.symbol.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="pd-asset-name">{coin.symbol}</div>
-                              <div className="pd-asset-sub">{coin.name}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="text-right">
-                          <span className="pd-price">${formatPrice(coin.currentPrice)}</span>
-                        </td>
-                        <td className="text-right">
-                          <span
-                            className={
-                              watchlistData.startTime
-                                ? `font-extrabold ${coin.changesSinceStart > 0 ? "momentum-positive" : coin.changesSinceStart < 0 ? "momentum-negative" : "momentum-neutral"}`
-                                : "momentum-neutral"
-                            }
-                          >
-                            {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <span
-                            className={`font-semibold ${
-                              Math.abs(coin.rateOfChange) > 0.5
-                                ? coin.rateOfChange > 0
-                                  ? "momentum-positive"
-                                  : "momentum-negative"
-                                : "momentum-neutral"
-                            }`}
-                          >
-                            {coin.rateOfChange.toFixed(2)}%/min
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <span className={coin.dailyChange >= 0 ? "momentum-positive" : "momentum-negative"}>
-                            {formatPercentage(coin.dailyChange)}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <span
-                            className={`momentum-badge ${
-                              Math.abs(coin.changesSinceStart) > 5
-                                ? "badge-hot"
-                                : Math.abs(coin.changesSinceStart) > 2
-                                  ? "badge-active"
-                                  : Math.abs(coin.changesSinceStart) > 0.5
-                                    ? "badge-positive"
-                                    : "badge-moderate"
-                            }`}
-                          >
-                            {Math.abs(coin.changesSinceStart) > 5
-                              ? "HOT"
-                              : Math.abs(coin.changesSinceStart) > 2
-                                ? "ACTIVE"
-                                : Math.abs(coin.changesSinceStart) > 0.5
-                                  ? "RISING"
-                                  : "STABLE"}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          {/* Mini sparkline */}
-                          <svg width="60" height="20" viewBox="0 0 60 20" fill="none">
-                            {(() => {
-                              const data = coin.priceHistory.slice(-20).map((p) => p.price)
-                              if (data.length < 2) return <></>
-                              const min = Math.min(...data)
-                              const max = Math.max(...data)
-                              const range = max - min || 1
-                              const pts = data
-                                .map((v, i) => {
-                                  const x = (i / (data.length - 1)) * 60
-                                  const y = 18 - ((v - min) / range) * 14
-                                  return `${x},${y}`
-                                })
-                                .join(" ")
-                              const color =
-                                coin.changesSinceStart > 5
-                                  ? "var(--accent-hot)"
-                                  : coin.changesSinceStart > 2
-                                    ? "var(--accent-cyan)"
-                                    : coin.changesSinceStart > 0
-                                      ? "var(--accent-success)"
-                                      : "var(--text-muted)"
-                              return (
-                                <>
-                                  <polyline points={pts} stroke={color} strokeWidth="1.5" fill="none" />
-                                  <circle
-                                    cx="60"
-                                    cy={18 - ((data[data.length - 1] - min) / range) * 14}
-                                    r="1.5"
-                                    fill={color}
-                                  />
-                                </>
-                              )
-                            })()}
-                          </svg>
-                        </td>
-                        <td className="text-center">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="pd-btn pd-btn-primary">
-                                <MoreHorizontal className="h-4 w-4" />
-                                Actions
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="bg-[var(--bg-secondary)] border-[color:var(--border-primary)]">
-                              <DropdownMenuItem
-                                onClick={() => removeCoin(coin.id)}
-                                className="focus:bg-[var(--bg-hover)] focus:text-white"
-                              >
-                                <X className="mr-2 h-4 w-4" />
-                                Remove
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="py-16 text-center">
-                  <div className="mx-auto size-16 rounded-full bg-[var(--bg-tertiary)] grid place-items-center mb-4">
-                    <Plus className="h-7 w-7 text-[var(--text-secondary)]" />
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text-2)]">
+      {/* Top Bar */}
+      <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/60 shadow-[var(--shadow-1)]">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-6">
+              <Brand />
+              <div className="hidden md:flex items-center gap-3">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    connectionStatus === "connected"
+                      ? "bg-[var(--mint)] live-dot"
+                      : connectionStatus === "connecting"
+                        ? "bg-[var(--amber)] animate-pulse"
+                        : "bg-[var(--text-muted)]"
+                  }`}
+                />
+                <Badge className={isRaceMode ? "status-hot" : isTracking ? "status-active" : "status-neutral"}>
+                  {isRaceMode ? "Race Active" : isTracking ? "Tracking" : "Ready"}
+                </Badge>
+                {connectionStatus === "connected" && (
+                  <div className="live-indicator">
+                    <div className="live-dot"></div>
+                    LIVE DATA
                   </div>
-                  <div className="text-lg font-medium">Start Building Your Watchlist</div>
-                  <div className="text-[var(--text-secondary)] text-sm mt-1">Search and add coins to get started.</div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Fallback Add Dialog */}
-        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-          <DialogContent className="sm:max-w-md bg-[var(--bg-secondary)] border-[color:var(--border-primary)]">
-            <DialogHeader>
-              <DialogTitle className="text-[var(--text-primary)]">Add Coin to Watchlist</DialogTitle>
-              <DialogDescription className="text-[var(--text-secondary)]">Pick from popular assets.</DialogDescription>
-            </DialogHeader>
-            <ScrollArea className="h-64">
-              <div className="grid grid-cols-1 gap-2">
-                {MOCK_COINS.filter((c) => !symbols.includes(c.symbol)).map((coin) => (
-                  <button
-                    key={coin.symbol}
-                    className="text-left p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-hover)] transition-colors"
-                    onClick={() => {
-                      addCoin(coin)
-                      setIsAddModalOpen(false)
-                    }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="size-8 rounded-full bg-[var(--bg-hover)] text-white text-sm font-semibold grid place-items-center">
-                        {coin.symbol.charAt(0)}
-                      </div>
-                      <div className="text-left">
-                        <div className="font-semibold">{coin.symbol}</div>
-                        <div className="text-xs text-[var(--text-secondary)]">{coin.name}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-                {MOCK_COINS.filter((c) => !symbols.includes(c.symbol)).length === 0 && (
-                  <div className="text-center py-8 text-[var(--text-secondary)] text-sm">All demo coins added</div>
                 )}
               </div>
-            </ScrollArea>
-          </DialogContent>
-        </Dialog>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <div className="hidden sm:flex items-center gap-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-1">
+                <Button
+                  size="sm"
+                  variant={activeTab === "table" ? "default" : "ghost"}
+                  onClick={() => setActiveTab("table")}
+                  className={
+                    activeTab === "table" ? "neon-button orchid" : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }
+                  aria-pressed={activeTab === "table"}
+                >
+                  <LayoutList className="mr-2 h-4 w-4" />
+                  Table
+                </Button>
+                <Button
+                  size="sm"
+                  variant={activeTab === "chart" ? "default" : "ghost"}
+                  onClick={() => setActiveTab("chart")}
+                  className={
+                    activeTab === "chart" ? "neon-button orchid" : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }
+                  aria-pressed={activeTab === "chart"}
+                >
+                  <LineChart className="mr-2 h-4 w-4" />
+                  Chart
+                </Button>
+              </div>
+
+              {!isRaceMode ? (
+                <Button
+                  onClick={startRace}
+                  disabled={watchlistData.coins.length === 0}
+                  className="neon-button px-4 py-2"
+                >
+                  <Flag className="mr-2 h-4 w-4" />
+                  Start Race
+                </Button>
+              ) : (
+                <Button onClick={stopRace} className="neon-button rose px-4 py-2">
+                  <Pause className="mr-2 h-4 w-4" />
+                  Stop Race
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={resetTracking}
+                disabled={!isTracking}
+                className="px-4 py-2 bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] border border-[var(--border)]"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6">
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Card className="neon-card accent">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
+              <Activity className="h-4 w-4 text-[var(--text-muted)]" />
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="text-2xl font-bold text-[var(--text)]">{watchlistData.coins.length}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="neon-card accent">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">
+                {isRaceMode ? "Race Started" : "Tracking Since"}
+              </CardTitle>
+              <Clock className="h-4 w-4 text-[var(--text-muted)]" />
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="text-2xl font-bold text-[var(--text)]">
+                {watchlistData.startTime
+                  ? new Date(watchlistData.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                  : "Not Started"}
+              </div>
+              {watchlistData.startTime && (
+                <div className="text-xs text-[var(--text-muted)]">
+                  {Math.floor((Date.now() - watchlistData.startTime) / 60000)}m elapsed
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="neon-card accent">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">
+                {isRaceMode ? "Race Leader" : "Best Performer"}
+              </CardTitle>
+              {isRaceMode ? (
+                <Trophy className="h-4 w-4 text-[var(--text-muted)]" />
+              ) : (
+                <TrendingUp className="h-4 w-4 text-[var(--text-muted)]" />
+              )}
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="text-2xl font-bold text-[var(--text)]">
+                {bestPerformer?.symbol.split("-")[0] || "N/A"}
+              </div>
+              {bestPerformer && (
+                <div className="text-xs text-positive">{formatPercentage(bestPerformer.changesSinceStart)}</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="neon-card accent">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
+              <Zap className="h-4 w-4 text-[var(--text-muted)]" />
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="text-2xl font-bold text-[var(--text)]">{fastestMover?.symbol.split("-")[0] || "N/A"}</div>
+              {fastestMover && (
+                <div className="text-xs text-[var(--text-muted)]">{fastestMover.rateOfChange.toFixed(2)}%/min</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "table" | "chart")} className="space-y-4">
+          <TabsContent value="table">
+            <Card className="neon-card">
+              <CardHeader className="border-b border-[var(--border)]">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  {/* View toggle */}
+                  <TabsList className="bg-[var(--surface-2)] border border-[var(--border)]">
+                    <TabsTrigger
+                      value="table"
+                      className="data-[state=active]:bg-[var(--orchid)] data-[state=active]:text-white text-[var(--text-muted)]"
+                    >
+                      <LayoutList className="mr-2 h-4 w-4" />
+                      Table
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="chart"
+                      onClick={() => setActiveTab("chart")}
+                      className="data-[state=active]:bg-[var(--orchid)] data-[state=active]:text-white text-[var(--text-muted)]"
+                    >
+                      <LineChart className="mr-2 h-4 w-4" />
+                      Chart
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Search + Add */}
+                  <div className="flex items-center gap-2">
+                    <AddCoinTypeahead
+                      value={query}
+                      onValueChange={setQuery}
+                      existingSymbols={watchlistData.coins.map((c) => c.symbol)}
+                      onSelectCoin={(coin) => addCoin(coin)}
+                      onAddFirstMatch={addFirstMatch}
+                    />
+                    <Button onClick={addFirstMatch} className="neon-button orchid px-4 py-2">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Coin
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                {sortedCoins.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-[var(--surface-2)] z-10">
+                        <TableRow className="border-[var(--border)]">
+                          <TableHead className="text-[var(--text-muted)]">Asset</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Current Price</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">
+                            {isRaceMode ? "Race %" : "% Since Start"}
+                          </TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Rate of Change</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Daily %</TableHead>
+                          <TableHead className="text-center text-[var(--text-muted)]">Status</TableHead>
+                          <TableHead className="text-center text-[var(--text-muted)]">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedCoins.map((coin, index) => {
+                          const status = getStatusBadge(coin)
+                          return (
+                            <TableRow
+                              key={coin.id}
+                              className="border-[var(--border)] hover:bg-[var(--surface-hover)] transition-colors"
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className="size-8 rounded-full grid place-items-center text-white text-sm font-semibold brand-shimmer"
+                                    style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
+                                    aria-hidden="true"
+                                  >
+                                    {coin.symbol.split("-")[0].charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-[var(--text)]">{coin.symbol.split("-")[0]}</div>
+                                    <div className="text-xs text-[var(--text-muted)]">{coin.name}</div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-[var(--text)]">
+                                ${formatPrice(coin.currentPrice)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <span
+                                  className={`font-semibold ${
+                                    coin.changesSinceStart > 0
+                                      ? "text-positive"
+                                      : coin.changesSinceStart < 0
+                                        ? "text-negative"
+                                        : "text-[var(--text-muted)]"
+                                  }`}
+                                >
+                                  {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="inline-flex items-center gap-1">
+                                  {Math.abs(coin.rateOfChange) > 0.1 &&
+                                    (coin.rateOfChange > 0 ? (
+                                      <TrendingUp className="h-3 w-3 text-positive" aria-hidden="true" />
+                                    ) : (
+                                      <TrendingDown className="h-3 w-3 text-negative" aria-hidden="true" />
+                                    ))}
+                                  <span
+                                    className={`text-sm ${
+                                      Math.abs(coin.rateOfChange) > 0.5
+                                        ? coin.rateOfChange > 0
+                                          ? "text-positive"
+                                          : "text-negative"
+                                        : "text-[var(--text-muted)]"
+                                    }`}
+                                  >
+                                    {coin.rateOfChange.toFixed(2)}%/min
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <span className={coin.dailyChange > 0 ? "text-positive" : "text-negative"}>
+                                  {formatPercentage(coin.dailyChange)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <span
+                                  className={`text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full border ${status.class}`}
+                                >
+                                  {status.text}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-[var(--text-muted)] hover:text-[var(--text)]"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent className="neon-card">
+                                    <DropdownMenuItem
+                                      onClick={() => removeCoin(coin.id)}
+                                      className="text-negative focus:text-negative focus:bg-[var(--surface-hover)]"
+                                    >
+                                      <X className="mr-2 h-4 w-4" />
+                                      Remove
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="py-16 text-center">
+                    <div className="mx-auto size-16 rounded-full bg-[var(--surface-2)] grid place-items-center mb-4">
+                      <Plus className="h-7 w-7 text-[var(--text-muted)]" />
+                    </div>
+                    <div className="text-lg font-medium text-[var(--text)]">Start Building Your Watchlist</div>
+                    <div className="text-[var(--text-muted)] text-sm mt-1">Search and add coins to get started.</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="chart">
+            <Card className="neon-card">
+              <CardHeader className="border-b border-[var(--border)]">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-4">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setActiveTab("table")}
+                      className="text-[var(--text-muted)] hover:text-[var(--text)]"
+                    >
+                      ← Back to Table
+                    </Button>
+                    <div>
+                      <CardTitle className="text-base text-[var(--text)]">Momentum Chart</CardTitle>
+                      <CardDescription className="text-[var(--text-muted)]">
+                        Normalized performance since start
+                      </CardDescription>
+                    </div>
+                  </div>
+
+                  {/* Timeframe moved to chart header (top-right on desktop, natural flow on mobile) */}
+                  <div className="flex items-center gap-1 border border-[var(--border)] rounded-lg p-1 bg-[var(--surface-2)]">
+                    {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
+                      <Button
+                        key={tf}
+                        size="sm"
+                        variant={timeFrame === tf ? "default" : "ghost"}
+                        onClick={() => setTimeFrame(tf)}
+                        className={
+                          timeFrame === tf ? "neon-button orchid" : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                        }
+                        aria-pressed={timeFrame === tf}
+                      >
+                        {tf}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="h-[28rem] p-0">
+                <div className="h-full">
+                  <RaceChart coins={sortedCoins} startTime={watchlistData.startTime} timeFrame={timeFrame} />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Fallback Add Dialog (optional selector when no query) */}
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent className="sm:max-w-md neon-card">
+          <DialogHeader>
+            <DialogTitle className="text-[var(--text)]">Add Coin to Watchlist</DialogTitle>
+            <DialogDescription className="text-[var(--text-muted)]">Pick from popular assets.</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-64">
+            <div className="grid grid-cols-1 gap-2">
+              {REAL_COINS.filter((c) => !watchlistData.coins.some((coin) => coin.symbol === c.symbol)).map((coin) => (
+                <Button
+                  key={coin.symbol}
+                  variant="ghost"
+                  className="justify-start h-auto py-3 hover:bg-[var(--surface-hover)]"
+                  onClick={() => {
+                    addCoin(coin)
+                    setIsAddModalOpen(false)
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="size-8 rounded-full bg-gradient-to-br from-[var(--orchid)] to-[var(--ice)] text-white text-sm font-semibold grid place-items-center brand-shimmer">
+                      {coin.symbol.split("-")[0].charAt(0)}
+                    </div>
+                    <div className="text-left">
+                      <div className="font-medium text-[var(--text)]">{coin.symbol}</div>
+                      <div className="text-xs text-[var(--text-muted)]">{coin.name}</div>
+                    </div>
+                  </div>
+                </Button>
+              ))}
+              {REAL_COINS.filter((c) => !watchlistData.coins.some((coin) => coin.symbol === c.symbol)).length === 0 && (
+                <div className="text-center py-8 text-[var(--text-muted)] text-sm">All coins added</div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+// Mini sparkline
+function MiniSparkline({ data, isPositive }: { data: number[]; isPositive: boolean }) {
+  if (data.length < 2) return <div className="w-16 h-6" />
+  const min = Math.min(...data)
+  const max = Math.max(...data)
+  const range = max - min || 1
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * 60
+      const y = 20 - ((v - min) / range) * 16
+      return `${x},${y}`
+    })
+    .join(" ")
+  return (
+    <svg width="60" height="20" className="inline-block">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={isPositive ? "var(--mint)" : "var(--rose)"}
+        strokeWidth="1.5"
+        opacity="0.9"
+      />
+    </svg>
   )
 }

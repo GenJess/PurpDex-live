@@ -150,6 +150,7 @@
 
   --shadow-1: 0 6px 18px rgba(16, 19, 26, 0.06);
   --shadow-2: 0 20px 40px rgba(16, 19, 26, 0.08);
+  --shadow-ambient: 0 8px 32px rgba(156, 107, 255, 0.12);
 }
 
 :root[data-theme="dark"] {
@@ -175,6 +176,7 @@
 
   --shadow-1: 0 6px 18px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 24px 44px rgba(0, 0, 0, 0.45);
+  --shadow-ambient: 0 8px 32px rgba(156, 107, 255, 0.15);
 }
 
 body {
@@ -188,27 +190,14 @@ body {
 .neon-card {
   background: var(--surface);
   border-radius: 16px;
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-ambient);
   position: relative;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   border: 1px solid var(--border);
 }
 
 .neon-card:hover {
-  box-shadow: var(--shadow-2);
-  transform: translateY(-2px);
-}
-
-.neon-card.accent::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--mint), var(--ice), var(--orchid));
-  opacity: 0.9;
-  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-ambient);
 }
 
 .neon-button {
@@ -219,12 +208,11 @@ body {
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--glow-mint);
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .neon-button:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-2), var(--glow-mint);
+  box-shadow: var(--glow-mint);
 }
 
 .neon-button.orchid {
@@ -234,7 +222,7 @@ body {
 }
 
 .neon-button.orchid:hover {
-  box-shadow: var(--shadow-2), var(--glow-orchid);
+  box-shadow: var(--glow-orchid);
 }
 
 .neon-button.rose {
@@ -248,7 +236,7 @@ body {
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 12px;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .neon-input:focus {
@@ -357,4 +345,29 @@ body {
 }
 .text-warning {
   color: var(--amber);
+}
+
+/* Remove hover animations on table rows */
+.table-row {
+  transition: none;
+}
+
+.table-row:hover {
+  background-color: var(--surface-hover);
+}
+
+/* Fix typeahead styling */
+.typeahead-item {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.typeahead-item:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.typeahead-item[data-selected="true"] {
+  background: var(--orchid);
+  color: white;
 }

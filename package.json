@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "latest",
+    "@radix-ui/react-tabs": "latest",
+    "@radix-ui/react-toast": "latest",
     "@tanstack/react-query": "latest",
     "axios": "latest",
     "class-variance-authority": "^0.7.1",

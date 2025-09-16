@@ -117,7 +117,8 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring;
+    /* Removed invalid outline-ring utility class */
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;

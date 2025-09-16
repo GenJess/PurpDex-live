@@ -1,8 +1,9 @@
 "use client"
 
-import CryptoTerminal from "../bloomberg-terminal"
-import "../app/globals.css"
+import dynamic from "next/dynamic"
+
+const App = dynamic(() => import("../src/App"), { ssr: false })
 
 export default function Page() {
-  return <CryptoTerminal />
+  return <App />
 }

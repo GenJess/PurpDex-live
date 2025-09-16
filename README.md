@@ -1,30 +1,68 @@
-# Bloomberg-like Terminal
+# Crypto Watchlist MVP
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+This is a minimal crypto watchlist web app that provides real-time price data for a user-selected list of cryptocurrencies.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/genjess-projects/v0-bloomberg-like-terminal)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/YvVGxwBeJaX)
+## Features
 
-## Overview
+- Display a table of coins with their name, ticker, price (USD), and 24-hour change (%).
+- Search for and add coins from CoinGecko's top 100 list.
+- Remove coins from the watchlist.
+- Real-time price updates every 30 seconds.
+- Responsive design for both mobile and desktop.
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+## Tech Stack
+
+- **Frontend:** React (Vite), Tailwind CSS
+- **Data Fetching:** @tanstack/react-query
+- **API:** CoinGecko
+
+## Setup and Local Development
+
+1. **Clone the repository:**
+   \`\`\`bash
+   git clone https://github.com/GenJess/Crypto_Momentum_Tracker.git
+   cd Crypto_Momentum_Tracker
+   \`\`\`
+
+2. **Install dependencies:**
+   \`\`\`bash
+   npm install
+   \`\`\`
+
+3. **Set up environment variables:**
+   Create a `.env` file in the root of the project and add the following line:
+   \`\`\`
+   VITE_API_BASE_URL=https://api.coingecko.com/api/v3
+   \`\`\`
+
+4. **Run the development server:**
+   \`\`\`bash
+   npm run dev
+   \`\`\`
+   The application will be available at `http://localhost:5173`.
+
+## API Endpoints Used
+
+The application uses the following CoinGecko API endpoints:
+
+- `GET /api/v3/coins/markets`: To fetch the list of top 100 cryptocurrencies for the search functionality.
+  - Parameters: `vs_currency=usd`, `order=market_cap_desc`, `per_page=100`
+- `GET /api/v3/simple/price`: To fetch real-time price and 24-hour change data for the coins in the watchlist.
+  - Parameters: `ids=<coin_ids>`, `vs_currencies=usd`, `include_24hr_change=true`
 
 ## Deployment
 
-Your project is live at:
+This project is configured for automatic deployment to Vercel. Any push to the `jules` branch will trigger a new deployment.
 
-**[https://vercel.com/genjess-projects/v0-bloomberg-like-terminal](https://vercel.com/genjess-projects/v0-bloomberg-like-terminal)**
+To deploy manually or to a different Vercel project:
 
-## Build your app
+1. **Install the Vercel CLI:**
+   \`\`\`bash
+   npm install -g vercel
+   \`\`\`
 
-Continue building your app on:
-
-**[https://v0.dev/chat/projects/YvVGxwBeJaX](https://v0.dev/chat/projects/YvVGxwBeJaX)**
-
-## How It Works
-
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+2. **Deploy the project:**
+   \`\`\`bash
+   vercel --prod
+   \`\`\`
+   Follow the prompts to link the project to your Vercel account. Vercel will automatically detect that this is a Vite project and configure the build settings accordingly.

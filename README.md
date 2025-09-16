@@ -19,26 +19,26 @@ This is a minimal crypto watchlist web app that provides real-time price data fo
 ## Setup and Local Development
 
 1. **Clone the repository:**
-   ```bash
+   \`\`\`bash
    git clone https://github.com/GenJess/Crypto_Momentum_Tracker.git
    cd Crypto_Momentum_Tracker
-   ```
+   \`\`\`
 
 2. **Install dependencies:**
-   ```bash
+   \`\`\`bash
    npm install
-   ```
+   \`\`\`
 
 3. **Set up environment variables:**
    Create a `.env` file in the root of the project and add the following line:
-   ```
+   \`\`\`
    VITE_API_BASE_URL=https://api.coingecko.com/api/v3
-   ```
+   \`\`\`
 
 4. **Run the development server:**
-   ```bash
+   \`\`\`bash
    npm run dev
-   ```
+   \`\`\`
    The application will be available at `http://localhost:5173`.
 
 ## API Endpoints Used
@@ -57,12 +57,12 @@ This project is configured for automatic deployment to Vercel. Any push to the `
 To deploy manually or to a different Vercel project:
 
 1. **Install the Vercel CLI:**
-   ```bash
+   \`\`\`bash
    npm install -g vercel
-   ```
+   \`\`\`
 
 2. **Deploy the project:**
-   ```bash
+   \`\`\`bash
    vercel --prod
-   ```
+   \`\`\`
    Follow the prompts to link the project to your Vercel account. Vercel will automatically detect that this is a Vite project and configure the build settings accordingly.

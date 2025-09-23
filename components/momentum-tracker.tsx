@@ -855,24 +855,24 @@ export default function MomentumTracker() {
           <Card className="neon-card text-center">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-center mb-3">
-                <Activity className="h-6 w-6 text-[var(--orchid)]" />
+                <Activity className="h-5 w-5 text-[var(--orchid)]" />
               </div>
-              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-4xl font-bold text-[var(--text)] mb-1">{watchlistData.coins.length}</div>
+              <div className="text-3xl font-bold text-[var(--text)] mb-1">{watchlistData.coins.length}</div>
             </CardContent>
           </Card>
 
           <Card className="neon-card text-center">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-center mb-3">
-                <Clock className="h-6 w-6 text-[var(--ice)]" />
+                <Clock className="h-5 w-5 text-[var(--ice)]" />
               </div>
-              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-4xl font-bold text-[var(--text)] font-mono mb-1">
+              <div className="text-3xl font-bold text-[var(--text)] font-mono mb-1">
                 {isTracking ? formatElapsedTime(elapsedTime) : "0:00"}
               </div>
             </CardContent>
@@ -881,16 +881,16 @@ export default function MomentumTracker() {
           <Card className={`neon-card text-center ${bestPerformer ? "ring-2 ring-[var(--mint)]/30" : ""}`}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-center mb-3">
-                <Trophy className="h-6 w-6 text-[var(--mint)]" />
+                <Trophy className="h-5 w-5 text-[var(--mint)]" />
               </div>
-              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Race Leader</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Race Leader</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-4xl font-bold text-[var(--text)] mb-1">
+              <div className="text-3xl font-bold text-[var(--text)] mb-1">
                 {bestPerformer?.symbol.split("-")[0] || "N/A"}
               </div>
               {bestPerformer && (
-                <div className="text-base text-positive font-semibold">
+                <div className="text-sm text-positive font-semibold">
                   {formatPercentage(bestPerformer.changesSinceStart)}
                 </div>
               )}
@@ -900,16 +900,16 @@ export default function MomentumTracker() {
           <Card className={`neon-card text-center ${fastestMover ? "ring-2 ring-[var(--amber)]/30" : ""}`}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-center mb-3">
-                <Zap className="h-6 w-6 text-[var(--amber)]" />
+                <Zap className="h-5 w-5 text-[var(--amber)]" />
               </div>
-              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-4xl font-bold text-[var(--text)] mb-1">
+              <div className="text-3xl font-bold text-[var(--text)] mb-1">
                 {fastestMover?.symbol.split("-")[0] || "N/A"}
               </div>
               {fastestMover && (
-                <div className="text-base text-[var(--text-muted)] font-semibold">
+                <div className="text-sm text-[var(--text-muted)] font-semibold">
                   {Math.abs(fastestMover.rateOfChange).toFixed(2)}%/{rocTimeFrame}
                 </div>
               )}
@@ -1004,26 +1004,14 @@ export default function MomentumTracker() {
 
                   {/* Search + Add */}
                   <div className="flex items-center gap-3 justify-center md:justify-end">
-                    <div className="relative w-full max-w-sm">
-                      <Search
-                        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)] pointer-events-none z-10"
-                        aria-hidden="true"
-                      />
-                      <Input
-                        aria-label="Search coins"
-                        placeholder="Search coins (e.g., BTC, ETH)"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault()
-                            addFirstMatch()
-                          }
-                        }}
-                        className="neon-input pl-10 pr-4 h-11 text-base"
-                      />
-                    </div>
-                    <Button onClick={addFirstMatch} className="neon-button orchid px-6 py-3 h-11">
+                    <AddCoinTypeahead
+                      value={query}
+                      onValueChange={setQuery}
+                      existingSymbols={watchlistData.coins.map((c) => c.symbol)}
+                      onSelectCoin={addCoin}
+                      onAddFirstMatch={addFirstMatch}
+                    />
+                    <Button onClick={addFirstMatch} className="neon-button orchid px-4 py-2 h-10">
                       <Plus className="mr-2 h-4 w-4" />
                       Add
                     </Button>
@@ -1068,7 +1056,6 @@ export default function MomentumTracker() {
                         {sortedCoins.map((coin, index) => {
                           const isTopPerformer =
                             index === 0 && sortBy === "rateOfChange" && Math.abs(coin.rateOfChange) > 0.1
-                          const mockVolume = coin.currentPrice * 1000000 * (0.5 + Math.random() * 1.5) // Realistic volume estimate
                           return (
                             <TableRow
                               key={coin.id}
@@ -1078,9 +1065,9 @@ export default function MomentumTracker() {
                               onClick={() => handleCoinClick(coin.id)}
                             >
                               <TableCell className="table-cell">
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3">
                                   <div
-                                    className="size-10 rounded-full grid place-items-center text-white text-base font-bold brand-shimmer"
+                                    className="size-8 rounded-full grid place-items-center text-white text-sm font-bold brand-shimmer"
                                     style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
                                     aria-hidden="true"
                                   >
@@ -1090,16 +1077,16 @@ export default function MomentumTracker() {
                                     <div className="font-bold text-lg text-[var(--text)]">
                                       {coin.symbol.split("-")[0]}
                                     </div>
-                                    <div className="text-sm text-[var(--text-muted)]">{coin.name}</div>
+                                    <div className="text-xs text-[var(--text-muted)]">{coin.name}</div>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right font-mono text-[var(--text)] table-cell text-lg font-semibold">
+                              <TableCell className="text-right font-mono text-[var(--text)] table-cell text-base font-semibold">
                                 ${formatPrice(coin.currentPrice)}
                               </TableCell>
                               <TableCell className="text-right table-cell">
                                 <span
-                                  className={`font-bold text-lg ${
+                                  className={`font-bold text-base ${
                                     coin.changesSinceStart > 0
                                       ? "text-positive"
                                       : coin.changesSinceStart < 0
@@ -1119,7 +1106,7 @@ export default function MomentumTracker() {
                                       <TrendingDown className="h-4 w-4 text-negative" aria-hidden="true" />
                                     ))}
                                   <span
-                                    className={`text-lg font-bold ${
+                                    className={`text-base font-bold ${
                                       Math.abs(coin.rateOfChange) > 0.5
                                         ? coin.rateOfChange > 0
                                           ? "text-positive"
@@ -1132,11 +1119,19 @@ export default function MomentumTracker() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right table-cell">
-                                <span className="text-sm font-semibold text-[var(--text-muted)]">
-                                  $
-                                  {mockVolume > 1000000000
-                                    ? `${(mockVolume / 1000000000).toFixed(1)}B`
-                                    : `${(mockVolume / 1000000).toFixed(0)}M`}
+                                <span className="text-xs text-[var(--text-muted)]">
+                                  ${(() => {
+                                    // Use coin symbol hash for consistent volume
+                                    const hash = coin.symbol.split("").reduce((a, b) => {
+                                      a = (a << 5) - a + b.charCodeAt(0)
+                                      return a & a
+                                    }, 0)
+                                    const baseVolume = (Math.abs(hash) % 1000000000) + 100000000 // 100M to 1.1B range
+                                    const volume = baseVolume * (coin.currentPrice / 100) // Scale by price
+                                    return volume > 1000000000
+                                      ? `${(volume / 1000000000).toFixed(1)}B`
+                                      : `${(volume / 1000000).toFixed(0)}M`
+                                  })()}
                                 </span>
                               </TableCell>
                               <TableCell className="text-center table-cell">

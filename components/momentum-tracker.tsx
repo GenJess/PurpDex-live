@@ -118,10 +118,13 @@ const calculateRateOfChange = (
 
   const percentChange = ((newest.price - oldest.price) / oldest.price) * 100
 
-  // Normalize to the requested timeframe (e.g., per minute)
-  const normalizedROC = (percentChange * timeFrameMs) / actualTimeSpan
+  // For ROC, we want the rate per the specified timeframe
+  // If timeframe is 1 minute and we have 30 seconds of data, scale appropriately
+  const scaleFactor = timeFrameMs / actualTimeSpan
+  const roc = percentChange * scaleFactor
 
-  return normalizedROC
+  // Cap extreme values to prevent display issues
+  return Math.max(-999, Math.min(999, roc))
 }
 
 const formatPrice = (price: number): string => {
@@ -204,11 +207,20 @@ function RaceChart({
     const min = Math.min(...all)
     const max = Math.max(...all)
     const absMax = Math.max(Math.abs(min), Math.abs(max))
-    const range = Math.max(absMax * 2, 2) // Ensure minimum range of 2%
-    const normalizedMin = -absMax
-    const normalizedMax = absMax
 
-    // grid
+    // Dynamic range with minimum zoom levels
+    let range = 0.2 // Start with ±0.1% range (0.2% total)
+    if (absMax > 0.1) {
+      range = 0.4 // Scale to ±0.2% range (0.4% total)
+    }
+    if (absMax > 0.2) {
+      range = absMax * 2.2 // Auto-scale beyond ±0.2%
+    }
+
+    const yMin = -range / 2
+    const yMax = range / 2
+
+    // Grid lines
     ctx.strokeStyle = "var(--border)"
     ctx.lineWidth = 0.5
     ctx.setLineDash([3, 3])
@@ -218,24 +230,24 @@ function RaceChart({
       ctx.moveTo(padding, y)
       ctx.lineTo(padding + w, y)
       ctx.stroke()
-      const v = normalizedMax - (i / 5) * range
+      const v = yMax - (i / 5) * range
       ctx.fillStyle = "var(--text-muted)"
       ctx.font = "10px Inter, ui-monospace, SFMono-Regular, Menlo, monospace"
       ctx.textAlign = "right"
-      ctx.fillText(`${v.toFixed(1)}%`, padding - 6, y + 3)
+      ctx.fillText(`${v.toFixed(2)}%`, padding - 6, y + 3)
     }
 
-    // zero-line
-    const zeroY = padding + ((normalizedMax - 0) / range) * h
+    // Zero line (centered)
+    const zeroY = padding + h / 2
     ctx.setLineDash([])
     ctx.strokeStyle = "var(--text-muted)"
-    ctx.lineWidth = 1.25
+    ctx.lineWidth = 1.5
     ctx.beginPath()
     ctx.moveTo(padding, zeroY)
     ctx.lineTo(padding + w, zeroY)
     ctx.stroke()
 
-    // series
+    // Draw series
     visibleCoinData.forEach((coin, idx) => {
       const series = coin.priceHistory.filter((p) => p.timestamp >= startTime)
       if (series.length < 2) return
@@ -246,16 +258,16 @@ function RaceChart({
       ctx.beginPath()
       series.forEach((pt, i) => {
         const x = padding + (i / (series.length - 1)) * w
-        const y = padding + ((normalizedMax - (pt.changesSinceStart || 0)) / range) * h
+        const y = padding + ((yMax - (pt.changesSinceStart || 0)) / range) * h
         if (i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       })
       ctx.stroke()
 
-      // end dot + label
+      // End dot + label
       const last = series[series.length - 1]
       const x = padding + w
-      const y = padding + ((normalizedMax - (last.changesSinceStart || 0)) / range) * h
+      const y = padding + ((yMax - (last.changesSinceStart || 0)) / range) * h
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(x, y, 3.5, 0, 2 * Math.PI)
@@ -491,8 +503,8 @@ function AddCoinTypeahead({
               setOpen(false)
             }
           }}
-          className="neon-input pl-10 pr-4 h-10"
-          style={{ paddingLeft: "2.5rem" }}
+          className="neon-input h-10"
+          style={{ paddingLeft: "2.5rem", paddingRight: "1rem" }}
         />
       </div>
       {open && (

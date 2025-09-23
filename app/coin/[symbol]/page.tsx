@@ -43,6 +43,7 @@ export default function CoinPage() {
     volume: number
     addedToWatchlistAt?: number
     changesSinceAdded?: number
+    basePrice?: number
   } | null>(null)
 
   useEffect(() => {
@@ -55,18 +56,26 @@ export default function CoinPage() {
     const dayAgo = series.find((p) => Date.now() - p.timestamp > 24 * 60 * 60 * 1000)
     const dailyChange = dayAgo ? ((latest.price - dayAgo.price) / dayAgo.price) * 100 : 0
 
-    // Mock volume data - in real app this would come from API
-    const volume = Math.random() * 1000000000
+    // Use consistent base price for "since added" calculation
+    const basePrice = coinData?.basePrice || latest.price
+    const changesSinceAdded = ((latest.price - basePrice) / basePrice) * 100
+
+    // Generate consistent volume based on coin symbol
+    const hash = coinInfo.symbol.split("").reduce((a, b) => {
+      a = (a << 5) - a + b.charCodeAt(0)
+      return a & a
+    }, 0)
+    const volume = (Math.abs(hash) % 1000000000) + 100000000
 
     setCoinData({
       currentPrice: latest.price,
       dailyChange,
       volume,
-      // These would come from watchlist data in real app
-      addedToWatchlistAt: Date.now() - Math.random() * 24 * 60 * 60 * 1000,
-      changesSinceAdded: (Math.random() - 0.5) * 20,
+      addedToWatchlistAt: Date.now() - 2 * 60 * 60 * 1000, // 2 hours ago
+      changesSinceAdded,
+      basePrice: coinData?.basePrice || latest.price, // Keep consistent base price
     })
-  }, [book, coinInfo])
+  }, [book, coinInfo, coinData?.basePrice])
 
   if (!coinInfo) {
     return (

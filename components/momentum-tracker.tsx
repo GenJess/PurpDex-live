@@ -8,8 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useCoinbase } from "@/hooks/use-coinbase"
 import {
@@ -323,11 +321,20 @@ function AddCoinTypeahead({
     setOpen(Boolean(value) && filtered.length > 0)
   }, [value, filtered.length])
 
+  const handleSelectCoin = useCallback(
+    (coin: (typeof REAL_COINS)[number]) => {
+      onSelectCoin(coin)
+      onValueChange("")
+      setOpen(false)
+    },
+    [onSelectCoin, onValueChange],
+  )
+
   return (
     <div className="relative w-full max-w-md">
       <div className="relative">
         <Search
-          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]"
+          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)] pointer-events-none z-10"
           aria-hidden="true"
         />
         <Input
@@ -344,36 +351,24 @@ function AddCoinTypeahead({
               setOpen(false)
             }
           }}
-          className="neon-input pl-9 placeholder:text-[var(--text-muted)]"
+          className="neon-input pl-10 pr-4 h-10"
+          style={{ paddingLeft: "2.5rem" }}
         />
       </div>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <span className="sr-only">Toggle suggestions</span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-full p-0 neon-card">
-          <Command shouldFilter={false} className="bg-transparent">
-            <CommandInput
-              value={value}
-              onValueChange={(v) => onValueChange(v)}
-              placeholder="Filter coins..."
-              className="hidden"
-            />
-            <CommandList className="max-h-64">
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50">
+          <div className="command-popover rounded-lg border shadow-lg">
+            <div className="command-list p-1">
               {filtered.length === 0 ? (
-                <CommandEmpty>No coins found</CommandEmpty>
+                <div className="command-empty py-6 text-center text-sm">No coins found</div>
               ) : (
-                <CommandGroup heading="Matches">
+                <div className="command-group">
+                  <div className="command-group-heading px-2 py-1.5 text-xs font-semibold">Matches</div>
                   {filtered.map((coin) => (
-                    <CommandItem
+                    <button
                       key={coin.symbol}
-                      value={coin.symbol}
-                      onSelect={() => {
-                        onSelectCoin(coin)
-                        onValueChange("")
-                        setOpen(false)
-                      }}
-                      className="typeahead-item"
+                      onClick={() => handleSelectCoin(coin)}
+                      className="typeahead-item w-full text-left rounded-md transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <div className="size-6 rounded-full bg-gradient-to-br from-[var(--orchid)] to-[var(--ice)] text-white text-xs font-semibold grid place-items-center">
@@ -384,14 +379,14 @@ function AddCoinTypeahead({
                           <span className="text-[11px] text-[var(--text-muted)]">{coin.name}</span>
                         </div>
                       </div>
-                    </CommandItem>
+                    </button>
                   ))}
-                </CommandGroup>
+                </div>
               )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -514,7 +509,15 @@ export default function MomentumTracker() {
         racePosition: 1,
         previousPosition: 1,
       }
-      setWatchlistData((prev) => ({ ...prev, coins: [...prev.coins, newCoin] }))
+
+      setWatchlistData((prev) => ({
+        ...prev,
+        coins: [...prev.coins, newCoin],
+      }))
+
+      // Update visible coins to include the new coin
+      setVisibleCoins((prev) => new Set([...prev, newCoin.id]))
+
       toast({ title: "Coin added", description: `${coinInfo.symbol} added to watchlist.` })
     },
     [book, watchlistData.startTime, watchlistData.coins, toast],
@@ -801,18 +804,18 @@ export default function MomentumTracker() {
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
-                          className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-muted)]"
+                          className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                         >
                           ROC: {rocTimeFrame}
                           <ChevronDown className="ml-2 h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="neon-card">
+                      <DropdownMenuContent className="dropdown-menu-content">
                         {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
                           <DropdownMenuItem
                             key={tf}
                             onClick={() => setRocTimeFrame(tf)}
-                            className={rocTimeFrame === tf ? "bg-[var(--orchid)] text-white" : ""}
+                            className={`dropdown-menu-item ${rocTimeFrame === tf ? "bg-[var(--orchid)] text-white" : ""}`}
                           >
                             {tf}
                           </DropdownMenuItem>
@@ -825,29 +828,29 @@ export default function MomentumTracker() {
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
-                          className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-muted)]"
+                          className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                         >
                           Sort:{" "}
                           {sortBy === "rateOfChange" ? "Fastest" : sortBy === "changesSinceStart" ? "Race %" : "Price"}
                           <ChevronDown className="ml-2 h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="neon-card">
+                      <DropdownMenuContent className="dropdown-menu-content">
                         <DropdownMenuItem
                           onClick={() => setSortBy("rateOfChange")}
-                          className={sortBy === "rateOfChange" ? "bg-[var(--orchid)] text-white" : ""}
+                          className={`dropdown-menu-item ${sortBy === "rateOfChange" ? "bg-[var(--orchid)] text-white" : ""}`}
                         >
                           Fastest Movers
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setSortBy("changesSinceStart")}
-                          className={sortBy === "changesSinceStart" ? "bg-[var(--orchid)] text-white" : ""}
+                          className={`dropdown-menu-item ${sortBy === "changesSinceStart" ? "bg-[var(--orchid)] text-white" : ""}`}
                         >
                           Race Performance
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setSortBy("currentPrice")}
-                          className={sortBy === "currentPrice" ? "bg-[var(--orchid)] text-white" : ""}
+                          className={`dropdown-menu-item ${sortBy === "currentPrice" ? "bg-[var(--orchid)] text-white" : ""}`}
                         >
                           Current Price
                         </DropdownMenuItem>
@@ -892,7 +895,7 @@ export default function MomentumTracker() {
                             className="table-row border-[var(--border)] cursor-pointer"
                             onClick={() => handleCoinClick(coin.id)}
                           >
-                            <TableCell>
+                            <TableCell className="table-cell">
                               <div className="flex items-center gap-3">
                                 <div
                                   className="size-8 rounded-full grid place-items-center text-white text-sm font-semibold brand-shimmer"
@@ -907,10 +910,10 @@ export default function MomentumTracker() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="text-right font-mono text-[var(--text)]">
+                            <TableCell className="text-right font-mono text-[var(--text)] table-cell">
                               ${formatPrice(coin.currentPrice)}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right table-cell">
                               <span
                                 className={`font-semibold ${
                                   coin.changesSinceStart > 0
@@ -923,7 +926,7 @@ export default function MomentumTracker() {
                                 {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
                               </span>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right table-cell">
                               <div className="inline-flex items-center gap-1">
                                 {Math.abs(coin.rateOfChange) > 0.1 &&
                                   (coin.rateOfChange > 0 ? (
@@ -944,7 +947,7 @@ export default function MomentumTracker() {
                                 </span>
                               </div>
                             </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="text-center table-cell">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -952,7 +955,7 @@ export default function MomentumTracker() {
                                   e.stopPropagation()
                                   removeCoin(coin.id)
                                 }}
-                                className="text-[var(--text-muted)] hover:text-negative h-8 w-8 p-0"
+                                className="text-[var(--text-muted)] hover:text-negative h-8 w-8 p-0 ghost-button"
                               >
                                 <X className="h-4 w-4" />
                               </Button>

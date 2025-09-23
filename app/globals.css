@@ -205,7 +205,8 @@ body {
 .neon-card:hover {
   box-shadow: var(--shadow-ambient);
   /* Add subtle hover effect */
-  border-color: var(--orchid);
+  border-color: var(--border); /* Remove orchid border on hover */
+  transform: none;
 }
 
 .neon-button {
@@ -226,7 +227,9 @@ body {
 
 .neon-button:hover {
   box-shadow: var(--glow-mint);
-  transform: translateY(-1px);
+  transform: none; /* Remove transform that can cause issues */
+  background: var(--mint);
+  color: #08140e;
 }
 
 .neon-button.orchid {
@@ -237,13 +240,18 @@ body {
 
 .neon-button.orchid:hover {
   box-shadow: var(--glow-orchid);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .neon-button.rose {
   background: var(--rose);
   color: white;
   box-shadow: 0 0 14px rgba(255, 77, 109, 0.25);
+}
+
+.neon-button.rose:hover {
+  box-shadow: 0 0 14px rgba(255, 77, 109, 0.25);
+  transform: none;
 }
 
 .neon-input {
@@ -255,6 +263,14 @@ body {
   /* Ensure proper input sizing and spacing */
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
+  line-height: 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+.neon-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .neon-input:focus {
@@ -262,9 +278,19 @@ body {
   box-shadow: var(--glow-orchid);
   background: var(--surface);
   outline: none;
+  color: var(--text);
 }
 
 /* Status badges */
+.status-hot,
+.status-active,
+.status-positive,
+.status-negative,
+.status-neutral {
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
 .status-hot {
   background: rgba(255, 0, 127, 0.15);
   color: #ff007f;
@@ -273,7 +299,6 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .status-active {
@@ -283,7 +308,6 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .status-positive {
@@ -293,7 +317,6 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .status-negative {
@@ -303,7 +326,6 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .status-neutral {
@@ -313,7 +335,6 @@ body {
   padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 /* Live indicator */
@@ -389,27 +410,138 @@ body {
 
 /* Remove hover animations on table rows */
 .table-row {
-  transition: none;
+  transition: none !important;
+  background-color: transparent !important;
 }
 
 .table-row:hover {
-  background-color: var(--surface-hover);
+  background-color: var(--surface-2) !important;
+  color: var(--text) !important;
 }
 
-/* Fix typeahead styling */
+/* Fix dropdown menu visibility and contrast */
+.dropdown-menu-content {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-2) !important;
+}
+
+.dropdown-menu-item {
+  background: transparent !important;
+  color: var(--text) !important;
+  padding: 0.5rem 0.75rem !important;
+}
+
+.dropdown-menu-item:hover {
+  background: var(--surface-hover) !important;
+  color: var(--text) !important;
+}
+
+.dropdown-menu-item[data-highlighted] {
+  background: var(--surface-hover) !important;
+  color: var(--text) !important;
+}
+
+/* Fix typeahead popover positioning and styling */
 .typeahead-item {
-  background: var(--surface-2);
-  color: var(--text);
+  background: transparent !important;
+  color: var(--text) !important;
+  padding: 0.75rem !important;
+  cursor: pointer !important;
 }
 
 .typeahead-item:hover {
-  background: var(--surface-hover);
-  color: var(--text);
+  background: var(--surface-hover) !important;
+  color: var(--text) !important;
 }
 
 .typeahead-item[data-selected="true"] {
-  background: var(--orchid);
-  color: white;
+  background: var(--orchid) !important;
+  color: white !important;
+}
+
+.typeahead-item[aria-selected="true"] {
+  background: var(--orchid) !important;
+  color: white !important;
+}
+
+/* Fix search input overlapping text and styling */
+.neon-input {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+.neon-input::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.7;
+}
+
+.neon-input:focus {
+  border-color: var(--orchid) !important;
+  box-shadow: var(--glow-orchid) !important;
+  background: var(--surface) !important;
+  outline: none !important;
+  color: var(--text) !important;
+}
+
+/* Fix command popover styling */
+.command-popover {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-2) !important;
+  z-index: 50 !important;
+}
+
+.command-list {
+  background: transparent !important;
+  max-height: 16rem !important;
+  overflow-y: auto !important;
+}
+
+.command-group {
+  background: transparent !important;
+}
+
+.command-group-heading {
+  color: var(--text-muted) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  padding: 0.5rem 0.75rem 0.25rem 0.75rem !important;
+}
+
+.command-empty {
+  color: var(--text-muted) !important;
+  text-align: center !important;
+  padding: 1rem !important;
+}
+
+/* Ensure proper contrast for all interactive elements */
+button:hover {
+  color: inherit !important;
+}
+
+.ghost-button:hover {
+  background: var(--surface-hover) !important;
+  color: var(--text) !important;
+}
+
+/* Ensure table cell text remains visible */
+.table-cell {
+  color: var(--text) !important;
+}
+
+.table-cell:hover {
+  color: var(--text) !important;
 }
 
 /* Fix container and layout spacing issues */

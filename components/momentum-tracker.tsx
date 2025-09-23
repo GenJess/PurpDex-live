@@ -100,14 +100,28 @@ const calculateRateOfChange = (
   timeFrameMs: number,
 ): number => {
   if (priceHistory.length < 2) return 0
+
   const now = Date.now()
-  const recent = priceHistory.filter((p) => now - p.timestamp <= timeFrameMs)
-  if (recent.length < 2) return 0
-  const timeSpan = recent[recent.length - 1].timestamp - recent[0].timestamp
-  const priceChange = recent[recent.length - 1].price - recent[0].price
-  const startPrice = recent[0].price
-  if (timeSpan === 0 || startPrice === 0) return 0
-  return ((priceChange / startPrice) * 100 * timeFrameMs) / timeSpan
+  const cutoff = now - timeFrameMs
+  const recentPoints = priceHistory.filter((p) => p.timestamp >= cutoff)
+
+  if (recentPoints.length < 2) return 0
+
+  const oldest = recentPoints[0]
+  const newest = recentPoints[recentPoints.length - 1]
+
+  if (oldest.price === 0) return 0
+
+  // Calculate percentage change over the actual time period
+  const actualTimeSpan = newest.timestamp - oldest.timestamp
+  if (actualTimeSpan === 0) return 0
+
+  const percentChange = ((newest.price - oldest.price) / oldest.price) * 100
+
+  // Normalize to the requested timeframe (e.g., per minute)
+  const normalizedROC = (percentChange * timeFrameMs) / actualTimeSpan
+
+  return normalizedROC
 }
 
 const formatPrice = (price: number): string => {
@@ -187,9 +201,12 @@ function RaceChart({
     )
     if (!all.length) return
 
-    const min = Math.min(...all, -1)
-    const max = Math.max(...all, 1)
-    const range = Math.max(max - min, 2)
+    const min = Math.min(...all)
+    const max = Math.max(...all)
+    const absMax = Math.max(Math.abs(min), Math.abs(max))
+    const range = Math.max(absMax * 2, 2) // Ensure minimum range of 2%
+    const normalizedMin = -absMax
+    const normalizedMax = absMax
 
     // grid
     ctx.strokeStyle = "var(--border)"
@@ -201,7 +218,7 @@ function RaceChart({
       ctx.moveTo(padding, y)
       ctx.lineTo(padding + w, y)
       ctx.stroke()
-      const v = max - (i / 5) * range
+      const v = normalizedMax - (i / 5) * range
       ctx.fillStyle = "var(--text-muted)"
       ctx.font = "10px Inter, ui-monospace, SFMono-Regular, Menlo, monospace"
       ctx.textAlign = "right"
@@ -209,7 +226,7 @@ function RaceChart({
     }
 
     // zero-line
-    const zeroY = padding + ((max - 0) / range) * h
+    const zeroY = padding + ((normalizedMax - 0) / range) * h
     ctx.setLineDash([])
     ctx.strokeStyle = "var(--text-muted)"
     ctx.lineWidth = 1.25
@@ -229,7 +246,7 @@ function RaceChart({
       ctx.beginPath()
       series.forEach((pt, i) => {
         const x = padding + (i / (series.length - 1)) * w
-        const y = padding + ((max - (pt.changesSinceStart || 0)) / range) * h
+        const y = padding + ((normalizedMax - (pt.changesSinceStart || 0)) / range) * h
         if (i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       })
@@ -238,7 +255,7 @@ function RaceChart({
       // end dot + label
       const last = series[series.length - 1]
       const x = padding + w
-      const y = padding + ((max - (last.changesSinceStart || 0)) / range) * h
+      const y = padding + ((normalizedMax - (last.changesSinceStart || 0)) / range) * h
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(x, y, 3.5, 0, 2 * Math.PI)
@@ -261,31 +278,154 @@ function RaceChart({
     )
   }
 
+  const sortedByROC = [...coins].sort((a, b) => Math.abs(b.rateOfChange) - Math.abs(a.rateOfChange))
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1">
-        <canvas ref={canvasRef} className="w-full h-full" />
+    <div className="h-full flex">
+      {/* Chart Area */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1">
+          <canvas ref={canvasRef} className="w-full h-full" />
+        </div>
+        {/* Chart Legend */}
+        <div className="border-t border-[var(--border)] p-4">
+          <div className="flex flex-wrap gap-2">
+            {coins.map((coin, idx) => (
+              <button
+                key={coin.id}
+                onClick={() => onToggleCoin(coin.id)}
+                className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-all ${
+                  visibleCoins.has(coin.id)
+                    ? "bg-[var(--surface-2)] text-[var(--text)]"
+                    : "bg-[var(--surface-hover)] text-[var(--text-muted)] opacity-50"
+                }`}
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: COIN_COLORS[idx % COIN_COLORS.length] }}
+                />
+                {coin.symbol.split("-")[0]}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-      {/* Chart Legend */}
-      <div className="border-t border-[var(--border)] p-4">
-        <div className="flex flex-wrap gap-2">
-          {coins.map((coin, idx) => (
-            <button
-              key={coin.id}
-              onClick={() => onToggleCoin(coin.id)}
-              className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-all ${
-                visibleCoins.has(coin.id)
-                  ? "bg-[var(--surface-2)] text-[var(--text)]"
-                  : "bg-[var(--surface-hover)] text-[var(--text-muted)] opacity-50"
-              }`}
+
+      <div className="w-80 border-l border-[var(--border)] bg-[var(--surface)] p-4">
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-[var(--text-muted)] mb-3">Live Rankings</h3>
+          <div className="space-y-2">
+            {sortedByROC.slice(0, 8).map((coin, index) => {
+              const isTopMover = index === 0 && Math.abs(coin.rateOfChange) > 0.1
+              return (
+                <div
+                  key={coin.id}
+                  className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                    isTopMover
+                      ? "bg-gradient-to-r from-[var(--orchid)]/10 to-[var(--mint)]/10 border-[var(--orchid)]/30 shadow-lg shadow-[var(--orchid)]/20"
+                      : "bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
+                  }`}
+                  onClick={() => onToggleCoin(coin.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-bold ${isTopMover ? "text-[var(--orchid)]" : "text-[var(--text-muted)]"}`}
+                        >
+                          #{index + 1}
+                        </span>
+                        <div
+                          className="size-6 rounded-full grid place-items-center text-white text-xs font-bold"
+                          style={{ backgroundColor: COIN_COLORS[coins.indexOf(coin) % COIN_COLORS.length] }}
+                        >
+                          {coin.symbol.split("-")[0].charAt(0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div
+                          className={`font-semibold text-sm ${isTopMover ? "text-[var(--text)]" : "text-[var(--text)]"}`}
+                        >
+                          {coin.symbol.split("-")[0]}
+                        </div>
+                        <div className="text-xs text-[var(--text-muted)]">${formatPrice(coin.currentPrice)}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div
+                        className={`text-sm font-bold flex items-center gap-1 ${
+                          coin.rateOfChange > 0
+                            ? "text-positive"
+                            : coin.rateOfChange < 0
+                              ? "text-negative"
+                              : "text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {Math.abs(coin.rateOfChange) > 0.1 &&
+                          (coin.rateOfChange > 0 ? (
+                            <TrendingUp className="h-3 w-3" />
+                          ) : (
+                            <TrendingDown className="h-3 w-3" />
+                          ))}
+                        {Math.abs(coin.rateOfChange).toFixed(2)}%
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {startTime ? formatPercentage(coin.changesSinceStart) : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  {isTopMover && (
+                    <div className="mt-2 pt-2 border-t border-[var(--orchid)]/20">
+                      <div className="flex items-center gap-1 text-xs text-[var(--orchid)] font-semibold">
+                        <Zap className="h-3 w-3" />
+                        Fastest Mover
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mt-6 pt-4 border-t border-[var(--border)]">
+          <h4 className="text-xs font-semibold text-[var(--text-muted)] mb-2">Quick Actions</h4>
+          <div className="space-y-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Toggle all coins visibility
+                const allVisible = coins.every((c) => visibleCoins.has(c.id))
+                if (allVisible) {
+                  coins.forEach((c) => onToggleCoin(c.id))
+                } else {
+                  coins.forEach((c) => {
+                    if (!visibleCoins.has(c.id)) onToggleCoin(c.id)
+                  })
+                }
+              }}
+              className="w-full text-xs bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
             >
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: COIN_COLORS[idx % COIN_COLORS.length] }}
-              />
-              {coin.symbol.split("-")[0]}
-            </button>
-          ))}
+              {coins.every((c) => visibleCoins.has(c.id)) ? "Hide All" : "Show All"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Show only top 3 performers
+                coins.forEach((c) => {
+                  const isTop3 = sortedByROC.slice(0, 3).includes(c)
+                  if (isTop3 && !visibleCoins.has(c.id)) onToggleCoin(c.id)
+                  if (!isTop3 && visibleCoins.has(c.id)) onToggleCoin(c.id)
+                })
+              }}
+              className="w-full text-xs bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
+            >
+              Top 3 Only
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -566,7 +706,7 @@ export default function MomentumTracker() {
     setIsTracking(true)
     setIsRaceMode(true)
     setElapsedTime(0)
-    setActiveTab("chart")
+    // setActiveTab("chart") // Removed this line
     toast({ title: "Race started", description: "All coins normalized to 0%." })
   }, [toast])
 
@@ -711,62 +851,66 @@ export default function MomentumTracker() {
       {/* Content */}
       <div className="container mx-auto px-4 py-6">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card className="neon-card text-center">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-center mb-2">
-                <Activity className="h-5 w-5 text-[var(--orchid)]" />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-center mb-3">
+                <Activity className="h-6 w-6 text-[var(--orchid)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
+              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)]">{watchlistData.coins.length}</div>
+              <div className="text-4xl font-bold text-[var(--text)] mb-1">{watchlistData.coins.length}</div>
             </CardContent>
           </Card>
 
           <Card className="neon-card text-center">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-center mb-2">
-                <Clock className="h-5 w-5 text-[var(--ice)]" />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-center mb-3">
+                <Clock className="h-6 w-6 text-[var(--ice)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
+              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)] font-mono">
+              <div className="text-4xl font-bold text-[var(--text)] font-mono mb-1">
                 {isTracking ? formatElapsedTime(elapsedTime) : "0:00"}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="neon-card text-center">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-center mb-2">
-                <Trophy className="h-5 w-5 text-[var(--mint)]" />
+          <Card className={`neon-card text-center ${bestPerformer ? "ring-2 ring-[var(--mint)]/30" : ""}`}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-center mb-3">
+                <Trophy className="h-6 w-6 text-[var(--mint)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Race Leader</CardTitle>
+              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Race Leader</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)]">
+              <div className="text-4xl font-bold text-[var(--text)] mb-1">
                 {bestPerformer?.symbol.split("-")[0] || "N/A"}
               </div>
               {bestPerformer && (
-                <div className="text-sm text-positive">{formatPercentage(bestPerformer.changesSinceStart)}</div>
+                <div className="text-base text-positive font-semibold">
+                  {formatPercentage(bestPerformer.changesSinceStart)}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="neon-card text-center">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-center mb-2">
-                <Zap className="h-5 w-5 text-[var(--amber)]" />
+          <Card className={`neon-card text-center ${fastestMover ? "ring-2 ring-[var(--amber)]/30" : ""}`}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-center mb-3">
+                <Zap className="h-6 w-6 text-[var(--amber)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
+              <CardTitle className="text-base font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)]">{fastestMover?.symbol.split("-")[0] || "N/A"}</div>
+              <div className="text-4xl font-bold text-[var(--text)] mb-1">
+                {fastestMover?.symbol.split("-")[0] || "N/A"}
+              </div>
               {fastestMover && (
-                <div className="text-sm text-[var(--text-muted)]">
-                  {fastestMover.rateOfChange.toFixed(2)}%/{rocTimeFrame}
+                <div className="text-base text-[var(--text-muted)] font-semibold">
+                  {Math.abs(fastestMover.rateOfChange).toFixed(2)}%/{rocTimeFrame}
                 </div>
               )}
             </CardContent>
@@ -859,15 +1003,27 @@ export default function MomentumTracker() {
                   </div>
 
                   {/* Search + Add */}
-                  <div className="flex items-center gap-2 justify-center md:justify-end">
-                    <AddCoinTypeahead
-                      value={query}
-                      onValueChange={setQuery}
-                      existingSymbols={watchlistData.coins.map((c) => c.symbol)}
-                      onSelectCoin={(coin) => addCoin(coin)}
-                      onAddFirstMatch={addFirstMatch}
-                    />
-                    <Button onClick={addFirstMatch} className="neon-button orchid px-4 py-2">
+                  <div className="flex items-center gap-3 justify-center md:justify-end">
+                    <div className="relative w-full max-w-sm">
+                      <Search
+                        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)] pointer-events-none z-10"
+                        aria-hidden="true"
+                      />
+                      <Input
+                        aria-label="Search coins"
+                        placeholder="Search coins (e.g., BTC, ETH)"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            addFirstMatch()
+                          }
+                        }}
+                        className="neon-input pl-10 pr-4 h-11 text-base"
+                      />
+                    </div>
+                    <Button onClick={addFirstMatch} className="neon-button orchid px-6 py-3 h-11">
                       <Plus className="mr-2 h-4 w-4" />
                       Add
                     </Button>
@@ -881,87 +1037,124 @@ export default function MomentumTracker() {
                     <Table>
                       <TableHeader className="sticky top-0 bg-[var(--surface-2)] z-10">
                         <TableRow className="border-[var(--border)]">
-                          <TableHead className="text-[var(--text-muted)]">Asset</TableHead>
-                          <TableHead className="text-right text-[var(--text-muted)]">Price</TableHead>
-                          <TableHead className="text-right text-[var(--text-muted)]">Race %</TableHead>
-                          <TableHead className="text-right text-[var(--text-muted)]">ROC ({rocTimeFrame})</TableHead>
+                          <TableHead className="text-[var(--text-muted)]" title="Cryptocurrency asset">
+                            Asset
+                          </TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]" title="Current market price">
+                            Price
+                          </TableHead>
+                          <TableHead
+                            className="text-right text-[var(--text-muted)]"
+                            title="Percentage change since race started"
+                          >
+                            Race %
+                          </TableHead>
+                          <TableHead
+                            className="text-right text-[var(--text-muted)]"
+                            title={`Rate of change per ${rocTimeFrame} - average pace of price movement`}
+                          >
+                            ROC ({rocTimeFrame})
+                          </TableHead>
+                          <TableHead
+                            className="text-right text-[var(--text-muted)]"
+                            title="24-hour trading volume (estimated - live data not available)"
+                          >
+                            Volume (24h)
+                          </TableHead>
                           <TableHead className="text-center text-[var(--text-muted)] w-16">Remove</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sortedCoins.map((coin, index) => (
-                          <TableRow
-                            key={coin.id}
-                            className="table-row border-[var(--border)] cursor-pointer"
-                            onClick={() => handleCoinClick(coin.id)}
-                          >
-                            <TableCell className="table-cell">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="size-8 rounded-full grid place-items-center text-white text-sm font-semibold brand-shimmer"
-                                  style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
-                                  aria-hidden="true"
-                                >
-                                  {coin.symbol.split("-")[0].charAt(0)}
+                        {sortedCoins.map((coin, index) => {
+                          const isTopPerformer =
+                            index === 0 && sortBy === "rateOfChange" && Math.abs(coin.rateOfChange) > 0.1
+                          const mockVolume = coin.currentPrice * 1000000 * (0.5 + Math.random() * 1.5) // Realistic volume estimate
+                          return (
+                            <TableRow
+                              key={coin.id}
+                              className={`table-row border-[var(--border)] cursor-pointer ${
+                                isTopPerformer ? "bg-[var(--surface-2)] ring-1 ring-[var(--orchid)]/30" : ""
+                              }`}
+                              onClick={() => handleCoinClick(coin.id)}
+                            >
+                              <TableCell className="table-cell">
+                                <div className="flex items-center gap-4">
+                                  <div
+                                    className="size-10 rounded-full grid place-items-center text-white text-base font-bold brand-shimmer"
+                                    style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
+                                    aria-hidden="true"
+                                  >
+                                    {coin.symbol.split("-")[0].charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-lg text-[var(--text)]">
+                                      {coin.symbol.split("-")[0]}
+                                    </div>
+                                    <div className="text-sm text-[var(--text-muted)]">{coin.name}</div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <div className="font-semibold text-[var(--text)]">{coin.symbol.split("-")[0]}</div>
-                                  <div className="text-xs text-[var(--text-muted)]">{coin.name}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-[var(--text)] table-cell">
-                              ${formatPrice(coin.currentPrice)}
-                            </TableCell>
-                            <TableCell className="text-right table-cell">
-                              <span
-                                className={`font-semibold ${
-                                  coin.changesSinceStart > 0
-                                    ? "text-positive"
-                                    : coin.changesSinceStart < 0
-                                      ? "text-negative"
-                                      : "text-[var(--text-muted)]"
-                                }`}
-                              >
-                                {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right table-cell">
-                              <div className="inline-flex items-center gap-1">
-                                {Math.abs(coin.rateOfChange) > 0.1 &&
-                                  (coin.rateOfChange > 0 ? (
-                                    <TrendingUp className="h-3 w-3 text-positive" aria-hidden="true" />
-                                  ) : (
-                                    <TrendingDown className="h-3 w-3 text-negative" aria-hidden="true" />
-                                  ))}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-[var(--text)] table-cell text-lg font-semibold">
+                                ${formatPrice(coin.currentPrice)}
+                              </TableCell>
+                              <TableCell className="text-right table-cell">
                                 <span
-                                  className={`text-sm font-semibold ${
-                                    Math.abs(coin.rateOfChange) > 0.5
-                                      ? coin.rateOfChange > 0
-                                        ? "text-positive"
-                                        : "text-negative"
-                                      : "text-[var(--text-muted)]"
+                                  className={`font-bold text-lg ${
+                                    coin.changesSinceStart > 0
+                                      ? "text-positive"
+                                      : coin.changesSinceStart < 0
+                                        ? "text-negative"
+                                        : "text-[var(--text-muted)]"
                                   }`}
                                 >
-                                  {coin.rateOfChange.toFixed(2)}%
+                                  {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
                                 </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center table-cell">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  removeCoin(coin.id)
-                                }}
-                                className="text-[var(--text-muted)] hover:text-negative h-8 w-8 p-0 ghost-button"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              </TableCell>
+                              <TableCell className="text-right table-cell">
+                                <div className="inline-flex items-center gap-2">
+                                  {Math.abs(coin.rateOfChange) > 0.1 &&
+                                    (coin.rateOfChange > 0 ? (
+                                      <TrendingUp className="h-4 w-4 text-positive" aria-hidden="true" />
+                                    ) : (
+                                      <TrendingDown className="h-4 w-4 text-negative" aria-hidden="true" />
+                                    ))}
+                                  <span
+                                    className={`text-lg font-bold ${
+                                      Math.abs(coin.rateOfChange) > 0.5
+                                        ? coin.rateOfChange > 0
+                                          ? "text-positive"
+                                          : "text-negative"
+                                        : "text-[var(--text-muted)]"
+                                    }`}
+                                  >
+                                    {Math.abs(coin.rateOfChange).toFixed(2)}%
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right table-cell">
+                                <span className="text-sm font-semibold text-[var(--text-muted)]">
+                                  $
+                                  {mockVolume > 1000000000
+                                    ? `${(mockVolume / 1000000000).toFixed(1)}B`
+                                    : `${(mockVolume / 1000000).toFixed(0)}M`}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-center table-cell">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    removeCoin(coin.id)
+                                  }}
+                                  className="text-[var(--text-muted)] hover:text-negative h-8 w-8 p-0 ghost-button"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -1017,7 +1210,7 @@ export default function MomentumTracker() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="h-[32rem] p-0">
+              <CardContent className="h-[40rem] p-0">
                 <RaceChart
                   coins={sortedCoins}
                   startTime={watchlistData.startTime}

@@ -26,6 +26,7 @@ import {
   LineChart,
   LayoutList,
   ChevronDown,
+  Flame,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
@@ -37,13 +38,12 @@ interface CoinData {
   name: string
   coinbaseId: string
   currentPrice: number
-  sessionStartPrice: number // Price when race started
+  sessionStartPrice: number // Price when coin was added or race started
+  sessionStartTime: number // Timestamp when tracking started for this coin
   sessionROC: number // % change since session start
-  momentum: number // Current velocity (% per minute)
-  dailyChange: number
+  momentum: number // Current velocity (% per selected timeframe)
   lastUpdated: number
   priceHistory: Array<{ price: number; timestamp: number }>
-  oneMinuteAgoPrice: number | null
 }
 
 interface WatchlistData {
@@ -51,19 +51,19 @@ interface WatchlistData {
   coins: CoinData[]
 }
 
-type TimeFrame = "1min" | "5min" | "15min" | "1h" | "1d"
+type MomentumTimeframe = "30s" | "1m" | "2m" | "5m"
 type SortField = "sessionROC" | "momentum" | "currentPrice"
 
-// Real crypto data with Coinbase product IDs
-const REAL_COINS = [
-  { symbol: "BTC-USD", name: "Bitcoin", basePrice: 67234.56, coinbaseId: "BTC-USD" },
-  { symbol: "ETH-USD", name: "Ethereum", basePrice: 3456.78, coinbaseId: "ETH-USD" },
-  { symbol: "SOL-USD", name: "Solana", basePrice: 189.45, coinbaseId: "SOL-USD" },
-  { symbol: "ADA-USD", name: "Cardano", basePrice: 0.4567, coinbaseId: "ADA-USD" },
-  { symbol: "DOGE-USD", name: "Dogecoin", basePrice: 0.0847, coinbaseId: "DOGE-USD" },
-  { symbol: "AVAX-USD", name: "Avalanche", basePrice: 34.56, coinbaseId: "AVAX-USD" },
-  { symbol: "UNI-USD", name: "Uniswap", basePrice: 8.42, coinbaseId: "UNI-USD" },
-  { symbol: "LINK-USD", name: "Chainlink", basePrice: 14.23, coinbaseId: "LINK-USD" },
+// REAL LEVERAGE PAIRS - Only coins with active leverage trading on Coinbase
+const LEVERAGE_PAIRS = [
+  { symbol: "BTC-USD", name: "Bitcoin", coinbaseId: "BTC-USD" },
+  { symbol: "ETH-USD", name: "Ethereum", coinbaseId: "ETH-USD" },
+  { symbol: "SOL-USD", name: "Solana", coinbaseId: "SOL-USD" },
+  { symbol: "AVAX-USD", name: "Avalanche", coinbaseId: "AVAX-USD" },
+  { symbol: "LINK-USD", name: "Chainlink", coinbaseId: "LINK-USD" },
+  { symbol: "DOGE-USD", name: "Dogecoin", coinbaseId: "DOGE-USD" },
+  { symbol: "ADA-USD", name: "Cardano", coinbaseId: "ADA-USD" },
+  { symbol: "UNI-USD", name: "Uniswap", coinbaseId: "UNI-USD" },
 ]
 
 const COIN_COLORS = ["#9C6BFF", "#00FF88", "#4FD1FF", "#FF4D6D", "#FFAE2B", "#f97316", "#ec4899", "#06b6d4"]
@@ -79,7 +79,7 @@ function Brand() {
         <div className="text-xl font-bold bg-gradient-to-r from-[var(--text)] to-[var(--orchid)] bg-clip-text text-transparent">
           PurpDex
         </div>
-        <div className="text-xs text-[var(--text-muted)]">Live Momentum Tracker</div>
+        <div className="text-xs text-[var(--text-muted)]">Live Leverage Trading Tracker</div>
       </div>
     </div>
   )
@@ -93,9 +93,43 @@ const calculateSessionROC = (currentPrice: number, sessionStartPrice: number): n
   return ((currentPrice - sessionStartPrice) / sessionStartPrice) * 100
 }
 
-const calculateMomentum = (currentPrice: number, oneMinuteAgoPrice: number | null): number => {
-  if (!oneMinuteAgoPrice) return 0
-  return ((currentPrice - oneMinuteAgoPrice) / oneMinuteAgoPrice) * 100
+const getMomentumTimeframeMs = (timeframe: MomentumTimeframe): number => {
+  switch (timeframe) {
+    case "30s":
+      return 30_000
+    case "1m":
+      return 60_000
+    case "2m":
+      return 120_000
+    case "5m":
+      return 300_000
+    default:
+      return 60_000
+  }
+}
+
+const calculateMomentum = (priceHistory: Array<{ price: number; timestamp: number }>, timeframeMs: number): number => {
+  if (priceHistory.length < 2) return 0
+
+  const now = Date.now()
+  const targetTime = now - timeframeMs
+
+  // Find the price closest to our target timeframe ago
+  let closestPoint = priceHistory[0]
+  let minDiff = Math.abs(closestPoint.timestamp - targetTime)
+
+  for (const point of priceHistory) {
+    const diff = Math.abs(point.timestamp - targetTime)
+    if (diff < minDiff) {
+      minDiff = diff
+      closestPoint = point
+    }
+  }
+
+  const currentPrice = priceHistory[priceHistory.length - 1].price
+  if (!closestPoint || closestPoint.price === 0) return 0
+
+  return ((currentPrice - closestPoint.price) / closestPoint.price) * 100
 }
 
 const formatPrice = (price: number): string => {
@@ -119,34 +153,15 @@ const formatElapsedTime = (ms: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`
 }
 
-const getTimeFrameMs = (timeFrame: TimeFrame): number => {
-  switch (timeFrame) {
-    case "1min":
-      return 60_000
-    case "5min":
-      return 300_000
-    case "15min":
-      return 900_000
-    case "1h":
-      return 3_600_000
-    case "1d":
-      return 86_400_000
-    default:
-      return 60_000
-  }
-}
-
 // Chart
 function RaceChart({
   coins,
   startTime,
-  timeFrame,
   visibleCoins,
   onToggleCoin,
 }: {
   coins: CoinData[]
   startTime: number | null
-  timeFrame: TimeFrame
   visibleCoins: Set<string>
   onToggleCoin: (coinId: string) => void
 }) {
@@ -172,7 +187,7 @@ function RaceChart({
     const visibleCoinData = coins.filter((c) => visibleCoins.has(c.id))
     const all = visibleCoinData.flatMap((c) =>
       c.priceHistory
-        .filter((p) => p.timestamp >= startTime)
+        .filter((p) => p.timestamp >= c.sessionStartTime)
         .map((p) => {
           return ((p.price - c.sessionStartPrice) / c.sessionStartPrice) * 100
         }),
@@ -219,7 +234,7 @@ function RaceChart({
 
     // Draw series
     visibleCoinData.forEach((coin, idx) => {
-      const series = coin.priceHistory.filter((p) => p.timestamp >= startTime)
+      const series = coin.priceHistory.filter((p) => p.timestamp >= coin.sessionStartTime)
       if (series.length < 2) return
       const color = COIN_COLORS[coins.indexOf(coin) % COIN_COLORS.length]
       ctx.strokeStyle = color
@@ -249,7 +264,7 @@ function RaceChart({
       ctx.textAlign = "left"
       ctx.fillText(`${coin.symbol.split("-")[0]}`, x + 8, y + 4)
     })
-  }, [coins, startTime, timeFrame, visibleCoins])
+  }, [coins, startTime, visibleCoins])
 
   if (!startTime || coins.length === 0) {
     return (
@@ -261,8 +276,6 @@ function RaceChart({
       </div>
     )
   }
-
-  const sortedByMomentum = [...coins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum))
 
   return (
     <div className="h-full flex">
@@ -292,121 +305,6 @@ function RaceChart({
           </div>
         </div>
       </div>
-
-      <div className="w-80 border-l border-[var(--border)] bg-[var(--surface)] p-4">
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold text-[var(--text-muted)] mb-3">Live Rankings (by Momentum)</h3>
-          <div className="space-y-2">
-            {sortedByMomentum.slice(0, 8).map((coin, index) => {
-              const isTopMover = index === 0 && Math.abs(coin.momentum) > 0.1
-              return (
-                <div
-                  key={coin.id}
-                  className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                    isTopMover
-                      ? "bg-gradient-to-r from-[var(--orchid)]/10 to-[var(--mint)]/10 border-[var(--orchid)]/30 shadow-lg shadow-[var(--orchid)]/20"
-                      : "bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
-                  }`}
-                  onClick={() => onToggleCoin(coin.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-xs font-bold ${isTopMover ? "text-[var(--orchid)]" : "text-[var(--text-muted)]"}`}
-                        >
-                          #{index + 1}
-                        </span>
-                        <div
-                          className="size-6 rounded-full grid place-items-center text-white text-xs font-bold"
-                          style={{ backgroundColor: COIN_COLORS[coins.indexOf(coin) % COIN_COLORS.length] }}
-                        >
-                          {coin.symbol.split("-")[0].charAt(0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div
-                          className={`font-semibold text-sm ${isTopMover ? "text-[var(--text)]" : "text-[var(--text)]"}`}
-                        >
-                          {coin.symbol.split("-")[0]}
-                        </div>
-                        <div className="text-xs text-[var(--text-muted)]">${formatPrice(coin.currentPrice)}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div
-                        className={`text-sm font-bold flex items-center gap-1 ${
-                          coin.momentum > 0
-                            ? "text-positive"
-                            : coin.momentum < 0
-                              ? "text-negative"
-                              : "text-[var(--text-muted)]"
-                        }`}
-                      >
-                        {Math.abs(coin.momentum) > 0.1 &&
-                          (coin.momentum > 0 ? (
-                            <TrendingUp className="h-3 w-3" />
-                          ) : (
-                            <TrendingDown className="h-3 w-3" />
-                          ))}
-                        {Math.abs(coin.momentum).toFixed(2)}%/min
-                      </div>
-                      <div className="text-xs text-[var(--text-muted)]">
-                        {startTime ? formatPercentage(coin.sessionROC) : "—"}
-                      </div>
-                    </div>
-                  </div>
-                  {isTopMover && (
-                    <div className="mt-2 pt-2 border-t border-[var(--orchid)]/20">
-                      <div className="flex items-center gap-1 text-xs text-[var(--orchid)] font-semibold">
-                        <Zap className="h-3 w-3" />
-                        Fastest Mover
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="mt-6 pt-4 border-t border-[var(--border)]">
-          <h4 className="text-xs font-semibold text-[var(--text-muted)] mb-2">Quick Actions</h4>
-          <div className="space-y-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const allVisible = coins.every((c) => visibleCoins.has(c.id))
-                if (allVisible) {
-                  coins.forEach((c) => onToggleCoin(c.id))
-                } else {
-                  coins.forEach((c) => {
-                    if (!visibleCoins.has(c.id)) onToggleCoin(c.id)
-                  })
-                }
-              }}
-              className="w-full text-xs bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
-            >
-              {coins.every((c) => visibleCoins.has(c.id)) ? "Hide All" : "Show All"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                coins.forEach((c) => {
-                  const isTop3 = sortedByMomentum.slice(0, 3).includes(c)
-                  if (isTop3 && !visibleCoins.has(c.id)) onToggleCoin(c.id)
-                  if (!isTop3 && visibleCoins.has(c.id)) onToggleCoin(c.id)
-                })
-              }}
-              className="w-full text-xs bg-[var(--surface-2)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
-            >
-              Top 3 Only
-            </Button>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
@@ -422,7 +320,7 @@ function AddCoinTypeahead({
   value: string
   onValueChange: (v: string) => void
   existingSymbols: string[]
-  onSelectCoin: (coin: (typeof REAL_COINS)[number]) => void
+  onSelectCoin: (coin: (typeof LEVERAGE_PAIRS)[number]) => void
   onAddFirstMatch: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -430,7 +328,7 @@ function AddCoinTypeahead({
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase()
     if (!q) return []
-    return REAL_COINS.filter(
+    return LEVERAGE_PAIRS.filter(
       (c) =>
         !existingSymbols.includes(c.symbol) && (c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
     ).slice(0, 8)
@@ -441,7 +339,7 @@ function AddCoinTypeahead({
   }, [value, filtered.length])
 
   const handleSelectCoin = useCallback(
-    (coin: (typeof REAL_COINS)[number]) => {
+    (coin: (typeof LEVERAGE_PAIRS)[number]) => {
       onSelectCoin(coin)
       onValueChange("")
       setOpen(false)
@@ -457,8 +355,8 @@ function AddCoinTypeahead({
           aria-hidden="true"
         />
         <Input
-          aria-label="Search coins"
-          placeholder="Search coins (e.g., BTC, ETH)"
+          aria-label="Search leverage pairs"
+          placeholder="Search leverage pairs (e.g., BTC, ETH)"
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={(e) => {
@@ -479,10 +377,10 @@ function AddCoinTypeahead({
           <div className="command-popover rounded-lg border shadow-lg">
             <div className="command-list p-1">
               {filtered.length === 0 ? (
-                <div className="command-empty py-6 text-center text-sm">No coins found</div>
+                <div className="command-empty py-6 text-center text-sm">No leverage pairs found</div>
               ) : (
                 <div className="command-group">
-                  <div className="command-group-heading px-2 py-1.5 text-xs font-semibold">Matches</div>
+                  <div className="command-group-heading px-2 py-1.5 text-xs font-semibold">Leverage Pairs</div>
                   {filtered.map((coin) => (
                     <button
                       key={coin.symbol}
@@ -495,7 +393,7 @@ function AddCoinTypeahead({
                         </div>
                         <div className="flex flex-col">
                           <span className="text-sm font-medium">{coin.symbol}</span>
-                          <span className="text-[11px] text-[var(--text-muted)]">{coin.name}</span>
+                          <span className="text-[11px] text-[var(--text-muted)]">{coin.name} • Leverage</span>
                         </div>
                       </div>
                     </button>
@@ -510,13 +408,42 @@ function AddCoinTypeahead({
   )
 }
 
+// Momentum Timeframe Selector
+function MomentumTimeframeSelector({
+  timeframe,
+  onTimeframeChange,
+}: {
+  timeframe: MomentumTimeframe
+  onTimeframeChange: (tf: MomentumTimeframe) => void
+}) {
+  const timeframes: MomentumTimeframe[] = ["30s", "1m", "2m", "5m"]
+
+  return (
+    <div className="flex items-center gap-1 bg-[var(--surface-2)] rounded-lg p-1 border border-[var(--border)]">
+      {timeframes.map((tf) => (
+        <button
+          key={tf}
+          onClick={() => onTimeframeChange(tf)}
+          className={`px-3 py-1.5 rounded-md text-xs transition-all font-medium ${
+            timeframe === tf
+              ? "bg-[var(--orchid)] text-white shadow-lg"
+              : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
+          }`}
+        >
+          {tf}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function MomentumTracker() {
   const { toast } = useToast()
   const router = useRouter()
 
   const [watchlistData, setWatchlistData] = useState<WatchlistData>({ sessionStartTime: null, coins: [] })
   const [isTracking, setIsTracking] = useState(false)
-  const [timeFrame, setTimeFrame] = useState<TimeFrame>("1min")
+  const [momentumTimeframe, setMomentumTimeframe] = useState<MomentumTimeframe>("1m")
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table")
   const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected")
   const [sortBy, setSortBy] = useState<SortField>("momentum")
@@ -563,62 +490,63 @@ export default function MomentumTracker() {
     }
   }, [watchlistData.coins.length])
 
-  const updateCoins = useCallback((priceBook: typeof book) => {
-    const now = Date.now()
-    if (isUpdatingRef.current || now - lastUpdateRef.current < 100) return
+  const momentumTimeframeMs = useMemo(() => getMomentumTimeframeMs(momentumTimeframe), [momentumTimeframe])
 
-    isUpdatingRef.current = true
-    lastUpdateRef.current = now
+  const updateCoins = useCallback(
+    (priceBook: typeof book) => {
+      const now = Date.now()
+      if (isUpdatingRef.current || now - lastUpdateRef.current < 100) return
 
-    setWatchlistData((prev) => {
-      const coins = prev.coins.map((coin) => {
-        const series = priceBook[coin.coinbaseId]
-        if (!series || series.length === 0) return coin
+      isUpdatingRef.current = true
+      lastUpdateRef.current = now
 
-        const latest = series[series.length - 1]
-        const nextPrice = latest.price
+      setWatchlistData((prev) => {
+        const coins = prev.coins.map((coin) => {
+          const series = priceBook[coin.coinbaseId]
+          if (!series || series.length === 0) return coin
 
-        if (!nextPrice || nextPrice === coin.currentPrice) return coin
+          const latest = series[series.length - 1]
+          const nextPrice = latest.price
 
-        const history = [...coin.priceHistory.slice(-100), { price: nextPrice, timestamp: now }]
+          if (!nextPrice || nextPrice === coin.currentPrice) return coin
 
-        const oneMinuteAgo = history.find((p) => now - p.timestamp >= 60_000)
-        const oneMinuteAgoPrice = oneMinuteAgo ? oneMinuteAgo.price : null
+          const history = [...coin.priceHistory.slice(-200), { price: nextPrice, timestamp: now }]
 
-        const sessionROC = calculateSessionROC(nextPrice, coin.sessionStartPrice)
-        const momentum = calculateMomentum(nextPrice, oneMinuteAgoPrice)
+          const sessionROC = calculateSessionROC(nextPrice, coin.sessionStartPrice)
+          const momentum = calculateMomentum(history, momentumTimeframeMs)
 
-        return {
-          ...coin,
-          currentPrice: nextPrice,
-          sessionROC,
-          momentum,
-          lastUpdated: now,
-          priceHistory: history,
-          oneMinuteAgoPrice,
-        }
+          return {
+            ...coin,
+            currentPrice: nextPrice,
+            sessionROC,
+            momentum,
+            lastUpdated: now,
+            priceHistory: history,
+          }
+        })
+
+        isUpdatingRef.current = false
+        return { ...prev, coins }
       })
-
-      isUpdatingRef.current = false
-      return { ...prev, coins }
-    })
-  }, [])
+    },
+    [momentumTimeframeMs],
+  )
 
   useEffect(() => {
     if (Object.keys(book).length > 0) {
       updateCoins(book)
     }
-  }, [book])
+  }, [book, updateCoins])
 
   const addCoin = useCallback(
-    (coinInfo: (typeof REAL_COINS)[number]) => {
+    (coinInfo: (typeof LEVERAGE_PAIRS)[number]) => {
       if (watchlistData.coins.some((c) => c.symbol === coinInfo.symbol)) {
         toast({ title: "Already added", description: `${coinInfo.symbol} is already in your watchlist.` })
         return
       }
 
       const series = book[coinInfo.coinbaseId]
-      const currentPrice = series && series.length > 0 ? series[series.length - 1].price : coinInfo.basePrice
+      const currentPrice = series && series.length > 0 ? series[series.length - 1].price : 0
       const now = Date.now()
 
       const newCoin: CoinData = {
@@ -627,13 +555,12 @@ export default function MomentumTracker() {
         name: coinInfo.name,
         coinbaseId: coinInfo.coinbaseId,
         currentPrice,
-        sessionStartPrice: watchlistData.sessionStartTime ? currentPrice : 0,
+        sessionStartPrice: currentPrice,
+        sessionStartTime: now, // Each coin tracks from when it was added
         sessionROC: 0,
         momentum: 0,
-        dailyChange: (Math.random() - 0.5) * 10,
         lastUpdated: now,
         priceHistory: [{ price: currentPrice, timestamp: now }],
-        oneMinuteAgoPrice: null,
       }
 
       setWatchlistData((prev) => ({
@@ -643,16 +570,16 @@ export default function MomentumTracker() {
 
       setVisibleCoins((prev) => new Set([...prev, newCoin.id]))
 
-      toast({ title: "Coin added", description: `${coinInfo.symbol} added to watchlist.` })
+      toast({ title: "Leverage pair added", description: `${coinInfo.symbol} added to watchlist.` })
     },
-    [book, watchlistData.sessionStartTime, watchlistData.coins, toast],
+    [book, watchlistData.coins, toast],
   )
 
   const addFirstMatch = useCallback(() => {
     const q = query.trim().toLowerCase()
     if (!q) return
 
-    const match = REAL_COINS.find(
+    const match = LEVERAGE_PAIRS.find(
       (c) =>
         !watchlistData.coins.some((x) => x.symbol === c.symbol) &&
         (c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
@@ -681,15 +608,15 @@ export default function MomentumTracker() {
       coins: prev.coins.map((c) => ({
         ...c,
         sessionStartPrice: c.currentPrice,
+        sessionStartTime: now, // Reset all to same start time
         sessionROC: 0,
         momentum: 0,
         priceHistory: [{ price: c.currentPrice, timestamp: now }],
-        oneMinuteAgoPrice: null,
       })),
     }))
     setIsTracking(true)
     setElapsedTime(0)
-    toast({ title: "Race started", description: "Session tracking started. All metrics reset." })
+    toast({ title: "Race started", description: "All coins tracking from this moment." })
   }, [toast])
 
   const stopRace = useCallback(() => {
@@ -704,10 +631,10 @@ export default function MomentumTracker() {
       coins: prev.coins.map((c) => ({
         ...c,
         sessionStartPrice: 0,
+        sessionStartTime: 0,
         sessionROC: 0,
         momentum: 0,
         priceHistory: [],
-        oneMinuteAgoPrice: null,
       })),
     }))
     setIsTracking(false)
@@ -764,6 +691,11 @@ export default function MomentumTracker() {
     [sortedCoins],
   )
 
+  // Top 3 fastest movers for highlighting
+  const topMovers = useMemo(() => {
+    return [...sortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum)).slice(0, 3)
+  }, [sortedCoins])
+
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text-2)]">
       <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/60 shadow-[var(--shadow-1)]">
@@ -787,7 +719,7 @@ export default function MomentumTracker() {
                 {connectionStatus === "connected" && (
                   <div className="live-indicator">
                     <div className="live-dot"></div>
-                    LIVE
+                    LIVE WS
                   </div>
                 )}
               </div>
@@ -833,7 +765,7 @@ export default function MomentumTracker() {
               <div className="flex items-center justify-center mb-2">
                 <Activity className="h-5 w-5 text-[var(--orchid)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Leverage Pairs</CardTitle>
             </CardHeader>
             <CardContent className="pt-0 pb-3">
               <div className="text-2xl font-bold text-[var(--text)]">{watchlistData.coins.length}</div>
@@ -845,7 +777,7 @@ export default function MomentumTracker() {
               <div className="flex items-center justify-center mb-2">
                 <Clock className="h-5 w-5 text-[var(--ice)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Session Time</CardTitle>
             </CardHeader>
             <CardContent className="pt-0 pb-3">
               <div className="text-2xl font-bold text-[var(--text)] font-mono">
@@ -882,7 +814,7 @@ export default function MomentumTracker() {
               <div className="text-2xl font-bold text-[var(--text)]">{fastestMover?.symbol.split("-")[0] || "N/A"}</div>
               {fastestMover && (
                 <div className="text-sm text-[var(--text-muted)] font-semibold">
-                  {Math.abs(fastestMover.momentum).toFixed(2)}%/min
+                  {Math.abs(fastestMover.momentum).toFixed(2)}%/{momentumTimeframe}
                 </div>
               )}
             </CardContent>
@@ -912,6 +844,8 @@ export default function MomentumTracker() {
                         Chart
                       </TabsTrigger>
                     </TabsList>
+
+                    <MomentumTimeframeSelector timeframe={momentumTimeframe} onTimeframeChange={setMomentumTimeframe} />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -971,29 +905,45 @@ export default function MomentumTracker() {
                           <TableHead className="text-[var(--text-muted)]">Asset</TableHead>
                           <TableHead className="text-right text-[var(--text-muted)]">Price</TableHead>
                           <TableHead className="text-right text-[var(--text-muted)]">Session %</TableHead>
-                          <TableHead className="text-right text-[var(--text-muted)]">Momentum (%/min)</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">
+                            Momentum ({momentumTimeframe})
+                          </TableHead>
                           <TableHead className="text-center text-[var(--text-muted)] w-16">Remove</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {sortedCoins.map((coin, index) => {
-                          const isTopPerformer = index === 0 && sortBy === "momentum" && Math.abs(coin.momentum) > 0.1
+                          const isTopMover = topMovers.includes(coin)
+                          const topMoverRank = topMovers.indexOf(coin)
                           return (
                             <TableRow
                               key={coin.id}
-                              className={`table-row border-[var(--border)] cursor-pointer ${
-                                isTopPerformer ? "bg-[var(--surface-2)] ring-1 ring-[var(--orchid)]/30" : ""
+                              className={`table-row border-[var(--border)] cursor-pointer transition-all ${
+                                isTopMover
+                                  ? topMoverRank === 0
+                                    ? "bg-[var(--amber)]/10 ring-2 ring-[var(--amber)]/40"
+                                    : topMoverRank === 1
+                                      ? "bg-[var(--orchid)]/10 ring-1 ring-[var(--orchid)]/30"
+                                      : "bg-[var(--ice)]/10 ring-1 ring-[var(--ice)]/20"
+                                  : ""
                               }`}
                               onClick={() => handleCoinClick(coin.id)}
                             >
                               <TableCell className="table-cell py-2">
                                 <div className="flex items-center gap-3">
-                                  <div
-                                    className="size-8 rounded-full grid place-items-center text-white text-sm font-bold brand-shimmer"
-                                    style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
-                                    aria-hidden="true"
-                                  >
-                                    {coin.symbol.split("-")[0].charAt(0)}
+                                  <div className="relative">
+                                    <div
+                                      className="size-8 rounded-full grid place-items-center text-white text-sm font-bold brand-shimmer"
+                                      style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
+                                      aria-hidden="true"
+                                    >
+                                      {coin.symbol.split("-")[0].charAt(0)}
+                                    </div>
+                                    {isTopMover && (
+                                      <div className="absolute -top-1 -right-1 size-4 rounded-full bg-[var(--amber)] flex items-center justify-center">
+                                        <Flame className="h-2.5 w-2.5 text-white" />
+                                      </div>
+                                    )}
                                   </div>
                                   <div>
                                     <div className="font-bold text-base text-[var(--text)]">
@@ -1064,8 +1014,10 @@ export default function MomentumTracker() {
                     <div className="mx-auto size-16 rounded-full bg-[var(--surface-2)] grid place-items-center mb-4">
                       <Plus className="h-7 w-7 text-[var(--text-muted)]" />
                     </div>
-                    <div className="text-lg font-medium text-[var(--text)]">Start Building Your Watchlist</div>
-                    <div className="text-[var(--text-muted)] text-sm mt-1">Search and add coins to get started.</div>
+                    <div className="text-lg font-medium text-[var(--text)]">Add Leverage Pairs</div>
+                    <div className="text-[var(--text-muted)] text-sm mt-1">
+                      Search and add leverage trading pairs to get started.
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -1085,28 +1037,11 @@ export default function MomentumTracker() {
                       ← Back to Table
                     </Button>
                     <div>
-                      <CardTitle className="text-base text-[var(--text)]">Momentum Chart</CardTitle>
+                      <CardTitle className="text-base text-[var(--text)]">Session Performance Chart</CardTitle>
                       <CardDescription className="text-[var(--text-muted)]">
-                        Session performance since start
+                        % change since session start
                       </CardDescription>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 border border-[var(--border)] rounded-lg p-1 bg-[var(--surface-2)]">
-                    {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
-                      <Button
-                        key={tf}
-                        size="sm"
-                        variant={timeFrame === tf ? "default" : "ghost"}
-                        onClick={() => setTimeFrame(tf)}
-                        className={
-                          timeFrame === tf ? "neon-button orchid" : "text-[var(--text-muted)] hover:text-[var(--text)]"
-                        }
-                        aria-pressed={timeFrame === tf}
-                      >
-                        {tf}
-                      </Button>
-                    ))}
                   </div>
                 </div>
               </CardHeader>
@@ -1114,7 +1049,6 @@ export default function MomentumTracker() {
                 <RaceChart
                   coins={sortedCoins}
                   startTime={watchlistData.sessionStartTime}
-                  timeFrame={timeFrame}
                   visibleCoins={visibleCoins}
                   onToggleCoin={toggleCoinVisibility}
                 />

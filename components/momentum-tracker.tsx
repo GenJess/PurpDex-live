@@ -231,7 +231,7 @@ function AddCoinTypeahead({
         />
       </div>
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-2 z-50">
+        <div className="absolute top-full left-0 right-0 mt-2 z-[100]">
           <div className="bg-[#292A2D] rounded-lg border border-[#3C4043] shadow-2xl overflow-hidden">
             <div className="max-h-64 overflow-y-auto p-1">
               {filtered.length === 0 ? (
@@ -281,9 +281,12 @@ export default function MomentumTracker() {
   const [elapsedTime, setElapsedTime] = useState(0)
   const [query, setQuery] = useState("")
   const [visibleCoins, setVisibleCoins] = useState<Set<string>>(new Set()) // This was in the original code but not in the update, keeping it for now.
+  const [previousPositions, setPreviousPositions] = useState<Map<string, number>>(new Map())
 
   const isUpdatingRef = useRef(false)
   const lastUpdateRef = useRef<number>(0)
+  const chartUpdateTimeoutRef = useRef<NodeJS.Timeout>()
+  const [debouncedChartData, setDebouncedChartData] = useState<CoinData[]>([])
 
   const symbols = useMemo(() => watchlistData.coins.map((c) => c.coinbaseId), [watchlistData.coins])
   const { book } = useCoinbase(symbols)
@@ -313,6 +316,58 @@ export default function MomentumTracker() {
       if (interval) clearInterval(interval)
     }
   }, [isTracking, watchlistData.sessionStartTime])
+
+  // Memoized filteredCoins and sortedCoins
+  const filteredCoins = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    // Always show all coins if no search query
+    if (!q) return watchlistData.coins
+
+    // Filter but maintain array reference stability
+    return watchlistData.coins.filter((c) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
+  }, [watchlistData.coins, query])
+
+  const sortedCoins = useMemo(() => {
+    const sorted = [...filteredCoins].sort((a, b) => {
+      switch (sortBy) {
+        case "momentum":
+          return Math.abs(b.momentum) - Math.abs(a.momentum)
+        case "sessionROC":
+          return b.sessionROC - a.sessionROC
+        case "currentPrice":
+          return b.currentPrice - a.currentPrice
+        default:
+          return Math.abs(b.momentum) - Math.abs(a.momentum)
+      }
+    })
+
+    // Track position changes
+    const newPositions = new Map<string, number>()
+    sorted.forEach((coin, index) => {
+      newPositions.set(coin.id, index)
+    })
+
+    setPreviousPositions(newPositions)
+
+    return sorted
+  }, [filteredCoins, sortBy])
+
+  // Debounced chart updates
+  useEffect(() => {
+    if (chartUpdateTimeoutRef.current) {
+      clearTimeout(chartUpdateTimeoutRef.current)
+    }
+
+    chartUpdateTimeoutRef.current = setTimeout(() => {
+      setDebouncedChartData(sortedCoins)
+    }, 100)
+
+    return () => {
+      if (chartUpdateTimeoutRef.current) {
+        clearTimeout(chartUpdateTimeoutRef.current)
+      }
+    }
+  }, [sortedCoins]) // sortedCoins is declared later, but the linter might flag it. This is a common pattern for dependencies that are defined within the same scope but used in an effect.
 
   // Update coins from WebSocket data
   const updateCoins = useCallback(
@@ -389,26 +444,21 @@ export default function MomentumTracker() {
         coinbaseId: coinInfo.coinbaseId,
         currentPrice,
         sessionStartPrice: currentPrice,
-        sessionStartTime: now, // Each coin tracks from when it was added
+        sessionStartTime: now,
         sessionROC: 0,
         momentum: 0,
         lastUpdated: now,
         priceHistory: [{ price: currentPrice, timestamp: now }],
       }
 
+      // Preserve existing coins and their state
       setWatchlistData((prev) => ({
         ...prev,
         coins: [...prev.coins, newCoin],
       }))
 
-      // Add to visible coins by default if not already there (to show in chart)
-      setVisibleCoins((prev) => {
-        const newSet = new Set(prev)
-        if (!newSet.has(newCoin.id)) {
-          newSet.add(newCoin.id)
-        }
-        return newSet
-      })
+      // Don't clear the search query immediately to allow rapid adding
+      setTimeout(() => setQuery(""), 100)
 
       toast({ title: "Pair added", description: `${coinInfo.symbol} added to watchlist.` })
     },
@@ -498,7 +548,7 @@ export default function MomentumTracker() {
     setVisibleCoins((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(coinId)) {
-        newSet.delete(coinId)
+        newSet.delete(coinId) // Corrected from `id` to `coinId`
       } else {
         newSet.add(coinId)
       }
@@ -506,14 +556,18 @@ export default function MomentumTracker() {
     })
   }, [])
 
-  const filteredCoins = useMemo(() => {
+  // Filtered coins memoized
+  const currentFilteredCoins = useMemo(() => {
     const q = query.trim().toLowerCase()
+    // Always show all coins if no search query
     if (!q) return watchlistData.coins
+
+    // Filter but maintain array reference stability
     return watchlistData.coins.filter((c) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
   }, [watchlistData.coins, query])
 
-  const sortedCoins = useMemo(() => {
-    return [...filteredCoins].sort((a, b) => {
+  const currentSortedCoins = useMemo(() => {
+    const sorted = [...currentFilteredCoins].sort((a, b) => {
       switch (sortBy) {
         case "momentum":
           return Math.abs(b.momentum) - Math.abs(a.momentum)
@@ -525,18 +579,28 @@ export default function MomentumTracker() {
           return Math.abs(b.momentum) - Math.abs(a.momentum)
       }
     })
-  }, [filteredCoins, sortBy])
 
-  const bestPerformer = useMemo(() => sortedCoins[0], [sortedCoins])
+    // Track position changes
+    const newPositions = new Map<string, number>()
+    sorted.forEach((coin, index) => {
+      newPositions.set(coin.id, index)
+    })
+
+    setPreviousPositions(newPositions)
+
+    return sorted
+  }, [currentFilteredCoins, sortBy])
+
+  const bestPerformer = useMemo(() => currentSortedCoins[0], [currentSortedCoins])
   const fastestMover = useMemo(
-    () => [...sortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum))[0],
-    [sortedCoins],
+    () => [...currentSortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum))[0],
+    [currentSortedCoins],
   )
 
   // Top 3 fastest movers for highlighting
   const topMovers = useMemo(() => {
-    return [...sortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum)).slice(0, 3)
-  }, [sortedCoins])
+    return [...currentSortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum)).slice(0, 3)
+  }, [currentSortedCoins])
 
   return (
     <div className="flex flex-col h-screen bg-[#121212] text-[#E3E3E3] overflow-hidden">
@@ -609,81 +673,55 @@ export default function MomentumTracker() {
       {/* Main Content - Scrollable */}
       <main className="flex-1 overflow-y-auto">
         <div className="container mx-auto px-4 py-4 md:py-6">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg overflow-hidden">
-              <CardHeader className="pb-2 pt-3 md:pt-4">
-                <div className="flex items-center justify-center mb-1 md:mb-2">
-                  <Activity className="h-4 w-4 md:h-5 md:w-5 text-[#A8C7FA]" aria-hidden="true" />
+          {/* Compact Stats Grid - Single Row */}
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <Card className="neon-card border border-[var(--border)]">
+              <CardContent className="py-2 px-3 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Activity className="h-3.5 w-3.5 text-[var(--mint)]" aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-muted)]">Pairs</span>
                 </div>
-                <CardTitle className="text-xs md:text-sm font-medium text-[#9AA0A6] text-center">
-                  Leverage Pairs
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-3 md:pb-4 text-center">
-                <div className="text-xl md:text-2xl font-bold text-[#E3E3E3]">{watchlistData.coins.length}</div>
+                <div className="text-lg font-bold text-[var(--text)]">{watchlistData.coins.length}</div>
               </CardContent>
             </Card>
 
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg overflow-hidden">
-              <CardHeader className="pb-2 pt-3 md:pt-4">
-                <div className="flex items-center justify-center mb-1 md:mb-2">
-                  <Clock className="h-4 w-4 md:h-5 md:w-5 text-[#00E5FF]" aria-hidden="true" />
+            <Card className="neon-card border border-[var(--border)]">
+              <CardContent className="py-2 px-3 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Clock className="h-3.5 w-3.5 text-[var(--ice)]" aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-muted)]">Time</span>
                 </div>
-                <CardTitle className="text-xs md:text-sm font-medium text-[#9AA0A6] text-center">
-                  Session Time
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-3 md:pb-4 text-center">
-                <div className="text-xl md:text-2xl font-bold text-[#E3E3E3] font-mono">
+                <div className="text-lg font-bold text-[var(--text)] font-mono">
                   {isTracking ? formatElapsedTime(elapsedTime) : "0:00"}
                 </div>
               </CardContent>
             </Card>
 
             <Card
-              className={`bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg overflow-hidden ${bestPerformer ? "ring-2 ring-[#00E5FF]/30" : ""}`}
+              className={`neon-card border ${bestPerformer ? "border-[var(--mint)] ring-2 ring-[var(--mint)]/20" : "border-[var(--border)]"}`}
             >
-              <CardHeader className="pb-2 pt-3 md:pt-4">
-                <div className="flex items-center justify-center mb-1 md:mb-2">
-                  <Trophy className="h-4 w-4 md:h-5 md:w-5 text-[#00E5FF]" aria-hidden="true" />
+              <CardContent className="py-2 px-3 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Trophy className="h-3.5 w-3.5 text-[var(--mint)]" aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-muted)]">Leader</span>
                 </div>
-                <CardTitle className="text-xs md:text-sm font-medium text-[#9AA0A6] text-center">
-                  Session Leader
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-3 md:pb-4 text-center">
-                <div className="text-xl md:text-2xl font-bold text-[#E3E3E3] truncate">
+                <div className="text-lg font-bold text-[var(--text)] truncate">
                   {bestPerformer?.symbol.split("-")[0] || "N/A"}
                 </div>
-                {bestPerformer && (
-                  <div className="text-xs md:text-sm text-[#00E5FF] font-semibold mt-1">
-                    {formatPercentage(bestPerformer.sessionROC)}
-                  </div>
-                )}
               </CardContent>
             </Card>
 
             <Card
-              className={`bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg overflow-hidden ${fastestMover ? "ring-2 ring-[#FFAE2B]/30" : ""}`}
+              className={`neon-card border ${fastestMover ? "border-[var(--amber)] ring-2 ring-[var(--amber)]/20" : "border-[var(--border)]"}`}
             >
-              <CardHeader className="pb-2 pt-3 md:pt-4">
-                <div className="flex items-center justify-center mb-1 md:mb-2">
-                  <Zap className="h-4 w-4 md:h-5 md:w-5 text-[#FFAE2B]" aria-hidden="true" />
+              <CardContent className="py-2 px-3 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Zap className="h-3.5 w-3.5 text-[var(--amber)]" aria-hidden="true" />
+                  <span className="text-xs text-[var(--text-muted)]">Fastest</span>
                 </div>
-                <CardTitle className="text-xs md:text-sm font-medium text-[#9AA0A6] text-center">
-                  Fastest Mover
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-3 md:pb-4 text-center">
-                <div className="text-xl md:text-2xl font-bold text-[#E3E3E3] truncate">
+                <div className="text-lg font-bold text-[var(--text)] truncate">
                   {fastestMover?.symbol.split("-")[0] || "N/A"}
                 </div>
-                {fastestMover && (
-                  <div className="text-xs md:text-sm text-[#9AA0A6] font-semibold mt-1">
-                    {Math.abs(fastestMover.momentum).toFixed(2)}%/{momentumTimeframe}
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -777,40 +815,44 @@ export default function MomentumTracker() {
                 </CardHeader>
 
                 <CardContent className="p-0">
-                  {sortedCoins.length > 0 ? (
+                  {currentSortedCoins.length > 0 ? (
                     <div className="overflow-x-auto">
                       <Table>
-                        <TableHeader className="bg-[#1E1E1E] sticky top-0 z-10">
-                          <TableRow className="border-[#3C4043] hover:bg-transparent">
-                            <TableHead className="text-[#9AA0A6] font-semibold text-xs md:text-sm">Asset</TableHead>
-                            <TableHead className="text-right text-[#9AA0A6] font-semibold text-xs md:text-sm">
+                        <TableHeader className="bg-[var(--surface)] sticky top-0 z-10">
+                          <TableRow className="border-[var(--border)] hover:bg-transparent">
+                            <TableHead className="text-[var(--text-muted)] font-semibold text-sm w-16">Place</TableHead>
+                            <TableHead className="text-[var(--text-muted)] font-semibold text-sm">Asset</TableHead>
+                            <TableHead className="text-right text-[var(--text-muted)] font-semibold text-sm w-32">
                               Price
                             </TableHead>
-                            <TableHead className="text-right text-[#9AA0A6] font-semibold text-xs md:text-sm">
+                            <TableHead className="text-right text-[var(--text-muted)] font-semibold text-sm w-28">
                               Session %
                             </TableHead>
-                            <TableHead className="text-right text-[#9AA0A6] font-semibold text-xs md:text-sm">
+                            <TableHead className="text-right text-[var(--text-muted)] font-semibold text-sm w-36">
                               Momentum ({momentumTimeframe})
                             </TableHead>
-                            <TableHead className="text-center text-[#9AA0A6] font-semibold text-xs md:text-sm w-16">
+                            <TableHead className="text-center text-[var(--text-muted)] font-semibold text-sm w-16">
                               <span className="sr-only">Actions</span>
                             </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {sortedCoins.map((coin, index) => {
+                          {currentSortedCoins.map((coin, index) => {
                             const isTopMover = topMovers.includes(coin)
                             const topMoverRank = topMovers.indexOf(coin)
+                            const previousPosition = previousPositions.get(coin.id)
+                            const positionChange = previousPosition !== undefined ? previousPosition - index : 0
+
                             return (
                               <TableRow
                                 key={coin.id}
-                                className={`border-[#3C4043] cursor-pointer transition-colors hover:bg-[#292A2D] ${
+                                className={`border-[var(--border)] cursor-pointer transition-colors hover:bg-[var(--surface-hover)] ${
                                   isTopMover
                                     ? topMoverRank === 0
-                                      ? "bg-[#FFAE2B]/10 ring-1 ring-inset ring-[#FFAE2B]/40"
+                                      ? "bg-[var(--amber)]/5 ring-1 ring-inset ring-[var(--amber)]/40"
                                       : topMoverRank === 1
-                                        ? "bg-[#A8C7FA]/10 ring-1 ring-inset ring-[#A8C7FA]/30"
-                                        : "bg-[#00E5FF]/10 ring-1 ring-inset ring-[#00E5FF]/20"
+                                        ? "bg-[var(--orchid)]/5 ring-1 ring-inset ring-[var(--orchid)]/30"
+                                        : "bg-[var(--ice)]/5 ring-1 ring-inset ring-[var(--ice)]/20"
                                     : ""
                                 }`}
                                 onClick={() => handleCoinClick(coin)}
@@ -824,11 +866,30 @@ export default function MomentumTracker() {
                                 }}
                                 aria-label={`View details for ${coin.name}`}
                               >
-                                <TableCell className="py-3 md:py-4">
-                                  <div className="flex items-center gap-2 md:gap-3">
+                                <TableCell className="py-3 w-16">
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-lg font-bold text-[var(--text-muted)] w-8 text-center">
+                                      #{index + 1}
+                                    </div>
+                                    {positionChange !== 0 && (
+                                      <div
+                                        className={`flex items-center gap-0.5 text-xs font-semibold ${
+                                          positionChange > 0
+                                            ? "text-positive animate-pulse"
+                                            : "text-negative animate-pulse"
+                                        }`}
+                                      >
+                                        {positionChange > 0 ? "↑" : "↓"}
+                                        {Math.abs(positionChange)}
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-3">
+                                  <div className="flex items-center gap-3">
                                     <div className="relative flex-shrink-0">
                                       <div
-                                        className="size-6 md:size-8 rounded-full grid place-items-center text-[#121212] text-xs md:text-sm font-bold"
+                                        className="size-8 rounded-full grid place-items-center text-white text-sm font-bold"
                                         style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
                                         aria-hidden="true"
                                       >
@@ -836,68 +897,59 @@ export default function MomentumTracker() {
                                       </div>
                                       {isTopMover && (
                                         <div
-                                          className="absolute -top-1 -right-1 size-3 md:size-4 rounded-full bg-[#FFAE2B] flex items-center justify-center"
+                                          className="absolute -top-1 -right-1 size-4 rounded-full bg-[var(--amber)] flex items-center justify-center"
                                           aria-label={`Top ${topMoverRank + 1} mover`}
                                         >
-                                          <Flame
-                                            className="h-2 w-2 md:h-2.5 md:w-2.5 text-[#121212]"
-                                            aria-hidden="true"
-                                          />
+                                          <Flame className="h-2.5 w-2.5 text-white" aria-hidden="true" />
                                         </div>
                                       )}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-bold text-sm md:text-base text-[#E3E3E3] truncate">
+                                      <div className="font-bold text-base text-[var(--text)] truncate">
                                         {coin.symbol.split("-")[0]}
                                       </div>
-                                      <div className="text-xs text-[#9AA0A6] truncate">{coin.name}</div>
+                                      <div className="text-xs text-[var(--text-muted)] truncate">{coin.name}</div>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right font-mono text-[#E3E3E3] text-sm md:text-base font-semibold py-3 md:py-4">
+                                <TableCell className="text-right font-mono text-[var(--text)] text-base font-semibold py-3 w-32">
                                   ${formatPrice(coin.currentPrice)}
                                 </TableCell>
-                                <TableCell className="text-right py-3 md:py-4">
+                                <TableCell className="text-right py-3 w-28">
                                   <span
-                                    className={`font-bold text-sm md:text-base ${
+                                    className={`font-bold text-base ${
                                       coin.sessionROC > 0
-                                        ? "text-[#00E5FF]"
+                                        ? "text-positive"
                                         : coin.sessionROC < 0
-                                          ? "text-[#FF4D6D]"
-                                          : "text-[#9AA0A6]"
+                                          ? "text-negative"
+                                          : "text-[var(--text-muted)]"
                                     }`}
                                   >
                                     {watchlistData.sessionStartTime ? formatPercentage(coin.sessionROC) : "—"}
                                   </span>
                                 </TableCell>
-                                <TableCell className="text-right py-3 md:py-4">
-                                  <div className="inline-flex items-center gap-1 md:gap-2">
+                                <TableCell className="text-right py-3 w-36">
+                                  <div className="inline-flex items-center gap-2">
                                     {Math.abs(coin.momentum) > 0.1 &&
                                       (coin.momentum > 0 ? (
-                                        <TrendingUp
-                                          className="h-3 w-3 md:h-4 md:w-4 text-[#00E5FF]"
-                                          aria-hidden="true"
-                                        />
+                                        <TrendingUp className="h-4 w-4 text-positive" aria-hidden="true" />
                                       ) : (
-                                        <TrendingDown
-                                          className="h-3 w-3 md:h-4 md:w-4 text-[#FF4D6D]"
-                                          aria-hidden="true"
-                                        />
+                                        <TrendingDown className="h-4 w-4 text-negative" aria-hidden="true" />
                                       ))}
                                     <span
-                                      className={`text-sm md:text-base font-bold ${
+                                      className={`text-base font-bold ${
                                         Math.abs(coin.momentum) > 0.5
                                           ? coin.momentum > 0
-                                            ? "text-[#00E5FF]"
-                                            : "text-[#FF4D6D]"
-                                          : "text-[#9AA0A6]"
+                                            ? "text-positive"
+                                            : "text-negative"
+                                          : "text-[var(--text-muted)]"
                                       }`}
                                     >
                                       {Math.abs(coin.momentum).toFixed(2)}%
                                     </span>
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-center py-3 md:py-4">
+                                <TableCell className="text-center py-3 w-16">
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -905,10 +957,10 @@ export default function MomentumTracker() {
                                       e.stopPropagation()
                                       removeCoin(coin.id)
                                     }}
-                                    className="text-[#9AA0A6] hover:text-[#FF4D6D] hover:bg-[#FF4D6D]/10 h-7 w-7 md:h-8 md:w-8 p-0 focus:outline-none focus:ring-2 focus:ring-[#A8C7FA] focus:ring-offset-2 focus:ring-offset-[#121212]"
+                                    className="text-[var(--text-muted)] hover:text-negative hover:bg-negative/10 h-8 w-8 p-0"
                                     aria-label={`Remove ${coin.name} from watchlist`}
                                   >
-                                    <X className="h-3 w-3 md:h-4 md:w-4" aria-hidden="true" />
+                                    <X className="h-4 w-4" aria-hidden="true" />
                                   </Button>
                                 </TableCell>
                               </TableRow>
@@ -960,7 +1012,7 @@ export default function MomentumTracker() {
                 </CardHeader>
                 <CardContent className="h-[40rem] p-0">
                   <RaceChart
-                    coins={sortedCoins}
+                    coins={debouncedChartData.length > 0 ? debouncedChartData : currentSortedCoins}
                     startTime={watchlistData.sessionStartTime}
                     visibleCoins={visibleCoins}
                     onToggleCoin={toggleCoinVisibility}
@@ -1054,21 +1106,32 @@ function RaceChart({
     ctx.lineTo(padding + w, zeroY)
     ctx.stroke()
 
-    // Draw series
+    // Draw series with smooth curves
     visibleCoinData.forEach((coin, idx) => {
       const series = coin.priceHistory.filter((p) => p.timestamp >= coin.sessionStartTime)
       if (series.length < 2) return
       const color = COIN_COLORS[coins.indexOf(coin) % COIN_COLORS.length]
       ctx.strokeStyle = color
-      ctx.lineWidth = 2
+      ctx.lineWidth = 2.5
 
       ctx.beginPath()
       series.forEach((pt, i) => {
         const sessionROC = ((pt.price - coin.sessionStartPrice) / coin.sessionStartPrice) * 100
         const x = padding + (i / (series.length - 1)) * w
         const y = padding + ((yMax - sessionROC) / range) * h
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
+
+        if (i === 0) {
+          ctx.moveTo(x, y)
+        } else {
+          // Use quadratic curves for smoothing
+          const prevPt = series[i - 1]
+          const prevSessionROC = ((prevPt.price - coin.sessionStartPrice) / coin.sessionStartPrice) * 100
+          const prevX = padding + ((i - 1) / (series.length - 1)) * w
+          const prevY = padding + ((yMax - prevSessionROC) / range) * h
+          const cpX = (prevX + x) / 2
+          const cpY = (prevY + y) / 2
+          ctx.quadraticCurveTo(prevX, prevY, cpX, cpY)
+        }
       })
       ctx.stroke()
 

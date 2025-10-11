@@ -9,92 +9,56 @@
 }
 
 @layer base {
-  :root {
-    --font-sans: var(--font-geist-sans);
-    --font-mono: var(--font-geist-mono);
+  :root[data-theme="dark"] {
+    --bg: #12151c;
+    --surface: #161b24;
+    --surface-2: #1b2230;
+    --surface-hover: #222a38;
+    --border: #2a3342;
 
-    /* Material You Color System - Dark Theme (Primary) */
-    --background: 240 10% 7%; /* #121212 - True Material You dark surface */
-    --foreground: 0 0% 89%; /* #E3E3E3 - High emphasis text */
+    --text: #e9edf6;
+    --text-2: #b6c0d4;
+    --text-muted: #8c95a9;
 
-    --card: 240 6% 12%; /* #1E1E1E - Elevated surface */
-    --card-foreground: 0 0% 89%;
+    --mint: #00ff88;
+    --ice: #46c9ff;
+    --orchid: #9c6bff;
+    --rose: #ff4d6d;
+    --amber: #ffae2b;
 
-    --popover: 240 8% 16%; /* #292A2D - Popover surface */
-    --popover-foreground: 0 0% 89%;
+    --glow-mint: 0 0 18px rgba(0, 255, 136, 0.35);
+    --glow-ice: 0 0 16px rgba(70, 201, 255, 0.28);
+    --glow-orchid: 0 0 16px rgba(156, 107, 255, 0.28);
 
-    --primary: 214 100% 82%; /* #A8C7FA - Material You Blue */
-    --primary-foreground: 240 10% 7%;
-
-    --secondary: 190 100% 50%; /* #00E5FF - Neon Cyan */
-    --secondary-foreground: 240 10% 7%;
-
-    --muted: 240 6% 15%; /* #26272C - Muted surface */
-    --muted-foreground: 220 9% 60%; /* #9AA0A6 - Medium emphasis text */
-
-    --accent: 34 100% 59%; /* #FFAE2B - Amber accent */
-    --accent-foreground: 240 10% 7%;
-
-    --destructive: 349 89% 65%; /* #FF4D6D - Error red */
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 240 6% 24%; /* #3C4043 - Dividers */
-    --input: 240 6% 24%;
-    --ring: 214 100% 82%; /* #A8C7FA - Focus ring */
-
-    /* Material You Extended Colors */
-    --success: 174 100% 50%; /* #00E5FF */
-    --warning: 34 100% 59%; /* #FFAE2B */
-    --info: 214 100% 82%; /* #A8C7FA */
-
-    /* Shadows with elevation */
-    --shadow-1: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
-    --shadow-2: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
-    --shadow-3: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px 0 rgb(0 0 0 / 0.3);
-    --shadow-4: 0 6px 10px 4px rgb(0 0 0 / 0.15), 0 2px 3px 0 rgb(0 0 0 / 0.3);
-    --shadow-5: 0 8px 12px 6px rgb(0 0 0 / 0.15), 0 4px 4px 0 rgb(0 0 0 / 0.3);
-
-    --radius: 0.75rem; /* 12px - Material You rounded corners */
-
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --shadow-1: 0 6px 18px rgba(0, 0, 0, 0.35);
+    --shadow-2: 0 24px 44px rgba(0, 0, 0, 0.45);
+    --shadow-ambient: 0 8px 32px rgba(156, 107, 255, 0.15);
   }
 
-  .light {
-    /* Material You Light Theme (not used but available) */
-    --background: 0 0% 98%;
-    --foreground: 240 10% 7%;
+  :root[data-theme="light"] {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --surface-2: #f2f4f8;
+    --surface-hover: #eef1f7;
+    --border: #e4e8f0;
 
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 7%;
+    --text: #0f1220;
+    --text-2: #4f566b;
+    --text-muted: #7a8093;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 7%;
+    --mint: #00ff88;
+    --ice: #4fd1ff;
+    --orchid: #9c6bff;
+    --rose: #ff4d6d;
+    --amber: #ffb020;
 
-    --primary: 214 88% 51%;
-    --primary-foreground: 0 0% 98%;
+    --glow-mint: 0 0 14px rgba(0, 255, 136, 0.25);
+    --glow-ice: 0 0 12px rgba(79, 209, 255, 0.22);
+    --glow-orchid: 0 0 12px rgba(156, 107, 255, 0.22);
 
-    --secondary: 190 100% 42%;
-    --secondary-foreground: 0 0% 98%;
-
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-
-    --accent: 34 94% 60%;
-    --accent-foreground: 240 10% 7%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 214 88% 51%;
+    --shadow-1: 0 6px 18px rgba(16, 19, 26, 0.06);
+    --shadow-2: 0 20px 40px rgba(16, 19, 26, 0.08);
+    --shadow-ambient: 0 8px 32px rgba(156, 107, 255, 0.12);
   }
 }
 
@@ -104,8 +68,13 @@
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: "Inter", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text-2);
+    letter-spacing: -0.01em;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
   }
 
   /* Material You Typography Scale */
@@ -152,35 +121,34 @@
 
   /* Custom Scrollbar - Material You Style */
   ::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
-    background: hsl(var(--background));
+    background: var(--surface);
   }
 
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
-    border-radius: 6px;
-    border: 2px solid hsl(var(--background));
+    background: var(--border);
+    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground));
+    background: var(--text-muted);
   }
 
   /* Neon Glow Effects */
   .glow-primary {
-    box-shadow: 0 0 12px rgba(168, 199, 250, 0.3), 0 0 24px rgba(168, 199, 250, 0.15);
+    box-shadow: var(--glow-mint);
   }
 
   .glow-secondary {
-    box-shadow: 0 0 12px rgba(0, 229, 255, 0.3), 0 0 24px rgba(0, 229, 255, 0.15);
+    box-shadow: var(--glow-ice);
   }
 
   .glow-accent {
-    box-shadow: 0 0 12px rgba(255, 174, 43, 0.3), 0 0 24px rgba(255, 174, 43, 0.15);
+    box-shadow: var(--glow-orchid);
   }
 
   /* Elevation Shadows */
@@ -192,18 +160,6 @@
     box-shadow: var(--shadow-2);
   }
 
-  .elevation-3 {
-    box-shadow: var(--shadow-3);
-  }
-
-  .elevation-4 {
-    box-shadow: var(--shadow-4);
-  }
-
-  .elevation-5 {
-    box-shadow: var(--shadow-5);
-  }
-
   /* Skip Link (Accessibility) */
   .skip-link {
     @apply sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-lg;
@@ -212,9 +168,9 @@
 
 /* High Contrast Mode Support */
 @media (prefers-contrast: high) {
-  :root {
-    --border: 240 6% 30%;
-    --ring: 214 100% 70%;
+  :root[data-theme="dark"] {
+    --border: #2a3342;
+    --ring: #00ff88;
   }
 }
 
@@ -225,4 +181,18 @@
 
 .dark-mode-toggle:hover {
   transform: rotate(180deg);
+}
+
+.neon-card {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow-1);
+  position: relative;
+  transition: all 0.2s ease;
+  border: 1px solid var(--border);
+}
+
+.neon-card:hover {
+  box-shadow: var(--shadow-2);
+  border-color: var(--border);
 }

@@ -560,6 +560,9 @@ export default function MomentumTracker() {
 
   const [query, setQuery] = useState("")
 
+  const isUpdatingRef = useRef(false)
+  const lastUpdateRef = useRef<number>(0)
+
   const symbols = useMemo(() => watchlistData.coins.map((c) => c.coinbaseId), [watchlistData.coins])
   const { book } = useCoinbase(symbols)
 
@@ -589,12 +592,26 @@ export default function MomentumTracker() {
 
   // Initialize visible coins when coins are added
   useEffect(() => {
-    setVisibleCoins(new Set(watchlistData.coins.map((c) => c.id)))
-  }, [watchlistData.coins])
+    const newCoinIds = new Set(watchlistData.coins.map((c) => c.id))
+    const currentCoinIds = Array.from(visibleCoins)
+    const hasChanged = newCoinIds.size !== currentCoinIds.length || !currentCoinIds.every((id) => newCoinIds.has(id))
+
+    if (hasChanged) {
+      setVisibleCoins(newCoinIds)
+    }
+  }, [watchlistData.coins.length]) // Only depend on length, not the entire array
+
+  const rocTimeFrameMs = useMemo(() => getTimeFrameMs(rocTimeFrame), [rocTimeFrame])
 
   const updateCoins = useCallback(
     (priceBook: typeof book) => {
-      const rocTimeFrameMs = getTimeFrameMs(rocTimeFrame)
+      const now = Date.now()
+      if (isUpdatingRef.current || now - lastUpdateRef.current < 100) {
+        return
+      }
+
+      isUpdatingRef.current = true
+      lastUpdateRef.current = now
 
       setWatchlistData((prev) => {
         const coins = prev.coins.map((coin) => {
@@ -606,11 +623,11 @@ export default function MomentumTracker() {
 
           if (!nextPrice || nextPrice === coin.currentPrice) return coin
 
-          const now = Date.now()
           const change = calculateChangesSinceStart(nextPrice, coin.startPrice)
           const normalized = isRaceMode ? change : coin.normalizedPrice
+
           const history = [
-            ...coin.priceHistory.slice(-100),
+            ...coin.priceHistory.slice(-50),
             { price: nextPrice, timestamp: now, changesSinceStart: change },
           ]
 
@@ -624,15 +641,19 @@ export default function MomentumTracker() {
             priceHistory: history,
           }
         })
+
+        isUpdatingRef.current = false
         return { ...prev, coins }
       })
     },
-    [isRaceMode, rocTimeFrame],
+    [isRaceMode, rocTimeFrameMs], // Use memoized value instead of rocTimeFrame
   )
 
   useEffect(() => {
-    if (Object.keys(book).length > 0) updateCoins(book)
-  }, [book, updateCoins])
+    if (Object.keys(book).length > 0) {
+      updateCoins(book)
+    }
+  }, [book]) // Only depend on book, not updateCoins
 
   const addCoin = useCallback(
     (coinInfo: (typeof REAL_COINS)[number]) => {

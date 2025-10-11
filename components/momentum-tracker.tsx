@@ -37,24 +37,22 @@ interface CoinData {
   name: string
   coinbaseId: string
   currentPrice: number
-  startPrice: number
-  changesSinceStart: number
-  normalizedPrice?: number
+  sessionStartPrice: number // Price when race started
+  sessionROC: number // % change since session start
+  momentum: number // Current velocity (% per minute)
   dailyChange: number
-  rateOfChange: number
   lastUpdated: number
-  priceHistory: Array<{ price: number; timestamp: number; changesSinceStart?: number }>
-  racePosition?: number
-  previousPosition?: number
+  priceHistory: Array<{ price: number; timestamp: number }>
+  oneMinuteAgoPrice: number | null
 }
 
 interface WatchlistData {
-  startTime: number | null
+  sessionStartTime: number | null
   coins: CoinData[]
 }
 
 type TimeFrame = "1min" | "5min" | "15min" | "1h" | "1d"
-type SortField = "changesSinceStart" | "rateOfChange" | "currentPrice"
+type SortField = "sessionROC" | "momentum" | "currentPrice"
 
 // Real crypto data with Coinbase product IDs
 const REAL_COINS = [
@@ -81,7 +79,7 @@ function Brand() {
         <div className="text-xl font-bold bg-gradient-to-r from-[var(--text)] to-[var(--orchid)] bg-clip-text text-transparent">
           PurpDex
         </div>
-        <div className="text-xs text-[var(--text-muted)]">Live ROC Momentum Tracker</div>
+        <div className="text-xs text-[var(--text-muted)]">Live Momentum Tracker</div>
       </div>
     </div>
   )
@@ -90,41 +88,14 @@ function Brand() {
 // Utilities
 const generateCoinId = (symbol: string) => `${symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 
-const calculateChangesSinceStart = (currentPrice: number, startPrice: number): number => {
-  if (!startPrice) return 0
-  return ((currentPrice - startPrice) / startPrice) * 100
+const calculateSessionROC = (currentPrice: number, sessionStartPrice: number): number => {
+  if (!sessionStartPrice) return 0
+  return ((currentPrice - sessionStartPrice) / sessionStartPrice) * 100
 }
 
-const calculateRateOfChange = (
-  priceHistory: Array<{ price: number; timestamp: number }>,
-  timeFrameMs: number,
-): number => {
-  if (priceHistory.length < 2) return 0
-
-  const now = Date.now()
-  const cutoff = now - timeFrameMs
-  const recentPoints = priceHistory.filter((p) => p.timestamp >= cutoff)
-
-  if (recentPoints.length < 2) return 0
-
-  const oldest = recentPoints[0]
-  const newest = recentPoints[recentPoints.length - 1]
-
-  if (oldest.price === 0) return 0
-
-  // Calculate percentage change over the actual time period
-  const actualTimeSpan = newest.timestamp - oldest.timestamp
-  if (actualTimeSpan === 0) return 0
-
-  const percentChange = ((newest.price - oldest.price) / oldest.price) * 100
-
-  // For ROC, we want the rate per the specified timeframe
-  // If timeframe is 1 minute and we have 30 seconds of data, scale appropriately
-  const scaleFactor = timeFrameMs / actualTimeSpan
-  const roc = percentChange * scaleFactor
-
-  // Cap extreme values to prevent display issues
-  return Math.max(-999, Math.min(999, roc))
+const calculateMomentum = (currentPrice: number, oneMinuteAgoPrice: number | null): number => {
+  if (!oneMinuteAgoPrice) return 0
+  return ((currentPrice - oneMinuteAgoPrice) / oneMinuteAgoPrice) * 100
 }
 
 const formatPrice = (price: number): string => {
@@ -200,7 +171,11 @@ function RaceChart({
 
     const visibleCoinData = coins.filter((c) => visibleCoins.has(c.id))
     const all = visibleCoinData.flatMap((c) =>
-      c.priceHistory.filter((p) => p.timestamp >= startTime).map((p) => p.changesSinceStart || 0),
+      c.priceHistory
+        .filter((p) => p.timestamp >= startTime)
+        .map((p) => {
+          return ((p.price - c.sessionStartPrice) / c.sessionStartPrice) * 100
+        }),
     )
     if (!all.length) return
 
@@ -208,14 +183,9 @@ function RaceChart({
     const max = Math.max(...all)
     const absMax = Math.max(Math.abs(min), Math.abs(max))
 
-    // Dynamic range with minimum zoom levels
-    let range = 0.2 // Start with ±0.1% range (0.2% total)
-    if (absMax > 0.1) {
-      range = 0.4 // Scale to ±0.2% range (0.4% total)
-    }
-    if (absMax > 0.2) {
-      range = absMax * 2.2 // Auto-scale beyond ±0.2%
-    }
+    let range = 0.2
+    if (absMax > 0.1) range = 0.4
+    if (absMax > 0.2) range = absMax * 2.2
 
     const yMin = -range / 2
     const yMax = range / 2
@@ -237,7 +207,7 @@ function RaceChart({
       ctx.fillText(`${v.toFixed(2)}%`, padding - 6, y + 3)
     }
 
-    // Zero line (centered)
+    // Zero line
     const zeroY = padding + h / 2
     ctx.setLineDash([])
     ctx.strokeStyle = "var(--text-muted)"
@@ -257,8 +227,9 @@ function RaceChart({
 
       ctx.beginPath()
       series.forEach((pt, i) => {
+        const sessionROC = ((pt.price - coin.sessionStartPrice) / coin.sessionStartPrice) * 100
         const x = padding + (i / (series.length - 1)) * w
-        const y = padding + ((yMax - (pt.changesSinceStart || 0)) / range) * h
+        const y = padding + ((yMax - sessionROC) / range) * h
         if (i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       })
@@ -267,7 +238,8 @@ function RaceChart({
       // End dot + label
       const last = series[series.length - 1]
       const x = padding + w
-      const y = padding + ((yMax - (last.changesSinceStart || 0)) / range) * h
+      const sessionROC = ((last.price - coin.sessionStartPrice) / coin.sessionStartPrice) * 100
+      const y = padding + ((yMax - sessionROC) / range) * h
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(x, y, 3.5, 0, 2 * Math.PI)
@@ -290,16 +262,14 @@ function RaceChart({
     )
   }
 
-  const sortedByROC = [...coins].sort((a, b) => Math.abs(b.rateOfChange) - Math.abs(a.rateOfChange))
+  const sortedByMomentum = [...coins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum))
 
   return (
     <div className="h-full flex">
-      {/* Chart Area */}
       <div className="flex-1 flex flex-col">
         <div className="flex-1">
           <canvas ref={canvasRef} className="w-full h-full" />
         </div>
-        {/* Chart Legend */}
         <div className="border-t border-[var(--border)] p-4">
           <div className="flex flex-wrap gap-2">
             {coins.map((coin, idx) => (
@@ -325,10 +295,10 @@ function RaceChart({
 
       <div className="w-80 border-l border-[var(--border)] bg-[var(--surface)] p-4">
         <div className="mb-4">
-          <h3 className="text-sm font-semibold text-[var(--text-muted)] mb-3">Live Rankings</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-muted)] mb-3">Live Rankings (by Momentum)</h3>
           <div className="space-y-2">
-            {sortedByROC.slice(0, 8).map((coin, index) => {
-              const isTopMover = index === 0 && Math.abs(coin.rateOfChange) > 0.1
+            {sortedByMomentum.slice(0, 8).map((coin, index) => {
+              const isTopMover = index === 0 && Math.abs(coin.momentum) > 0.1
               return (
                 <div
                   key={coin.id}
@@ -366,23 +336,23 @@ function RaceChart({
                     <div className="text-right">
                       <div
                         className={`text-sm font-bold flex items-center gap-1 ${
-                          coin.rateOfChange > 0
+                          coin.momentum > 0
                             ? "text-positive"
-                            : coin.rateOfChange < 0
+                            : coin.momentum < 0
                               ? "text-negative"
                               : "text-[var(--text-muted)]"
                         }`}
                       >
-                        {Math.abs(coin.rateOfChange) > 0.1 &&
-                          (coin.rateOfChange > 0 ? (
+                        {Math.abs(coin.momentum) > 0.1 &&
+                          (coin.momentum > 0 ? (
                             <TrendingUp className="h-3 w-3" />
                           ) : (
                             <TrendingDown className="h-3 w-3" />
                           ))}
-                        {Math.abs(coin.rateOfChange).toFixed(2)}%
+                        {Math.abs(coin.momentum).toFixed(2)}%/min
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        {startTime ? formatPercentage(coin.changesSinceStart) : "—"}
+                        {startTime ? formatPercentage(coin.sessionROC) : "—"}
                       </div>
                     </div>
                   </div>
@@ -400,7 +370,6 @@ function RaceChart({
           </div>
         </div>
 
-        {/* Quick Actions */}
         <div className="mt-6 pt-4 border-t border-[var(--border)]">
           <h4 className="text-xs font-semibold text-[var(--text-muted)] mb-2">Quick Actions</h4>
           <div className="space-y-2">
@@ -408,7 +377,6 @@ function RaceChart({
               size="sm"
               variant="outline"
               onClick={() => {
-                // Toggle all coins visibility
                 const allVisible = coins.every((c) => visibleCoins.has(c.id))
                 if (allVisible) {
                   coins.forEach((c) => onToggleCoin(c.id))
@@ -426,9 +394,8 @@ function RaceChart({
               size="sm"
               variant="outline"
               onClick={() => {
-                // Show only top 3 performers
                 coins.forEach((c) => {
-                  const isTop3 = sortedByROC.slice(0, 3).includes(c)
+                  const isTop3 = sortedByMomentum.slice(0, 3).includes(c)
                   if (isTop3 && !visibleCoins.has(c.id)) onToggleCoin(c.id)
                   if (!isTop3 && visibleCoins.has(c.id)) onToggleCoin(c.id)
                 })
@@ -547,14 +514,12 @@ export default function MomentumTracker() {
   const { toast } = useToast()
   const router = useRouter()
 
-  const [watchlistData, setWatchlistData] = useState<WatchlistData>({ startTime: null, coins: [] })
+  const [watchlistData, setWatchlistData] = useState<WatchlistData>({ sessionStartTime: null, coins: [] })
   const [isTracking, setIsTracking] = useState(false)
-  const [isRaceMode, setIsRaceMode] = useState(false)
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("1min")
-  const [rocTimeFrame, setRocTimeFrame] = useState<TimeFrame>("1min")
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table")
   const [connectionStatus, setConnectionStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected")
-  const [sortBy, setSortBy] = useState<SortField>("rateOfChange")
+  const [sortBy, setSortBy] = useState<SortField>("momentum")
   const [elapsedTime, setElapsedTime] = useState(0)
   const [visibleCoins, setVisibleCoins] = useState<Set<string>>(new Set())
 
@@ -566,7 +531,6 @@ export default function MomentumTracker() {
   const symbols = useMemo(() => watchlistData.coins.map((c) => c.coinbaseId), [watchlistData.coins])
   const { book } = useCoinbase(symbols)
 
-  // Update connection status based on data flow
   useEffect(() => {
     if (Object.keys(book).length > 0) {
       setConnectionStatus("connected")
@@ -577,20 +541,18 @@ export default function MomentumTracker() {
     }
   }, [book, symbols])
 
-  // Elapsed time counter
   useEffect(() => {
     let interval: NodeJS.Timeout
-    if (isTracking && watchlistData.startTime) {
+    if (isTracking && watchlistData.sessionStartTime) {
       interval = setInterval(() => {
-        setElapsedTime(Date.now() - watchlistData.startTime!)
+        setElapsedTime(Date.now() - watchlistData.sessionStartTime!)
       }, 1000)
     }
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isTracking, watchlistData.startTime])
+  }, [isTracking, watchlistData.sessionStartTime])
 
-  // Initialize visible coins when coins are added
   useEffect(() => {
     const newCoinIds = new Set(watchlistData.coins.map((c) => c.id))
     const currentCoinIds = Array.from(visibleCoins)
@@ -599,61 +561,54 @@ export default function MomentumTracker() {
     if (hasChanged) {
       setVisibleCoins(newCoinIds)
     }
-  }, [watchlistData.coins.length]) // Only depend on length, not the entire array
+  }, [watchlistData.coins.length])
 
-  const rocTimeFrameMs = useMemo(() => getTimeFrameMs(rocTimeFrame), [rocTimeFrame])
+  const updateCoins = useCallback((priceBook: typeof book) => {
+    const now = Date.now()
+    if (isUpdatingRef.current || now - lastUpdateRef.current < 100) return
 
-  const updateCoins = useCallback(
-    (priceBook: typeof book) => {
-      const now = Date.now()
-      if (isUpdatingRef.current || now - lastUpdateRef.current < 100) {
-        return
-      }
+    isUpdatingRef.current = true
+    lastUpdateRef.current = now
 
-      isUpdatingRef.current = true
-      lastUpdateRef.current = now
+    setWatchlistData((prev) => {
+      const coins = prev.coins.map((coin) => {
+        const series = priceBook[coin.coinbaseId]
+        if (!series || series.length === 0) return coin
 
-      setWatchlistData((prev) => {
-        const coins = prev.coins.map((coin) => {
-          const series = priceBook[coin.coinbaseId]
-          if (!series || series.length === 0) return coin
+        const latest = series[series.length - 1]
+        const nextPrice = latest.price
 
-          const latest = series[series.length - 1]
-          const nextPrice = latest.price
+        if (!nextPrice || nextPrice === coin.currentPrice) return coin
 
-          if (!nextPrice || nextPrice === coin.currentPrice) return coin
+        const history = [...coin.priceHistory.slice(-100), { price: nextPrice, timestamp: now }]
 
-          const change = calculateChangesSinceStart(nextPrice, coin.startPrice)
-          const normalized = isRaceMode ? change : coin.normalizedPrice
+        const oneMinuteAgo = history.find((p) => now - p.timestamp >= 60_000)
+        const oneMinuteAgoPrice = oneMinuteAgo ? oneMinuteAgo.price : null
 
-          const history = [
-            ...coin.priceHistory.slice(-50),
-            { price: nextPrice, timestamp: now, changesSinceStart: change },
-          ]
+        const sessionROC = calculateSessionROC(nextPrice, coin.sessionStartPrice)
+        const momentum = calculateMomentum(nextPrice, oneMinuteAgoPrice)
 
-          return {
-            ...coin,
-            currentPrice: nextPrice,
-            changesSinceStart: change,
-            normalizedPrice: normalized,
-            rateOfChange: calculateRateOfChange(history, rocTimeFrameMs),
-            lastUpdated: now,
-            priceHistory: history,
-          }
-        })
-
-        isUpdatingRef.current = false
-        return { ...prev, coins }
+        return {
+          ...coin,
+          currentPrice: nextPrice,
+          sessionROC,
+          momentum,
+          lastUpdated: now,
+          priceHistory: history,
+          oneMinuteAgoPrice,
+        }
       })
-    },
-    [isRaceMode, rocTimeFrameMs], // Use memoized value instead of rocTimeFrame
-  )
+
+      isUpdatingRef.current = false
+      return { ...prev, coins }
+    })
+  }, [])
 
   useEffect(() => {
     if (Object.keys(book).length > 0) {
       updateCoins(book)
     }
-  }, [book]) // Only depend on book, not updateCoins
+  }, [book])
 
   const addCoin = useCallback(
     (coinInfo: (typeof REAL_COINS)[number]) => {
@@ -672,15 +627,13 @@ export default function MomentumTracker() {
         name: coinInfo.name,
         coinbaseId: coinInfo.coinbaseId,
         currentPrice,
-        startPrice: watchlistData.startTime ? currentPrice : 0,
-        changesSinceStart: 0,
-        normalizedPrice: 0,
+        sessionStartPrice: watchlistData.sessionStartTime ? currentPrice : 0,
+        sessionROC: 0,
+        momentum: 0,
         dailyChange: (Math.random() - 0.5) * 10,
-        rateOfChange: 0,
         lastUpdated: now,
-        priceHistory: [{ price: currentPrice, timestamp: now, changesSinceStart: 0 }],
-        racePosition: 1,
-        previousPosition: 1,
+        priceHistory: [{ price: currentPrice, timestamp: now }],
+        oneMinuteAgoPrice: null,
       }
 
       setWatchlistData((prev) => ({
@@ -688,12 +641,11 @@ export default function MomentumTracker() {
         coins: [...prev.coins, newCoin],
       }))
 
-      // Update visible coins to include the new coin
       setVisibleCoins((prev) => new Set([...prev, newCoin.id]))
 
       toast({ title: "Coin added", description: `${coinInfo.symbol} added to watchlist.` })
     },
-    [book, watchlistData.startTime, watchlistData.coins, toast],
+    [book, watchlistData.sessionStartTime, watchlistData.coins, toast],
   )
 
   const addFirstMatch = useCallback(() => {
@@ -725,45 +677,40 @@ export default function MomentumTracker() {
   const startRace = useCallback(() => {
     const now = Date.now()
     setWatchlistData((prev) => ({
-      startTime: now,
+      sessionStartTime: now,
       coins: prev.coins.map((c) => ({
         ...c,
-        startPrice: c.currentPrice,
-        changesSinceStart: 0,
-        normalizedPrice: 0,
-        priceHistory: [{ price: c.currentPrice, timestamp: now, changesSinceStart: 0 }],
-        racePosition: 1,
-        previousPosition: 1,
+        sessionStartPrice: c.currentPrice,
+        sessionROC: 0,
+        momentum: 0,
+        priceHistory: [{ price: c.currentPrice, timestamp: now }],
+        oneMinuteAgoPrice: null,
       })),
     }))
     setIsTracking(true)
-    setIsRaceMode(true)
     setElapsedTime(0)
-    // setActiveTab("chart") // Removed this line
-    toast({ title: "Race started", description: "All coins normalized to 0%." })
+    toast({ title: "Race started", description: "Session tracking started. All metrics reset." })
   }, [toast])
 
   const stopRace = useCallback(() => {
-    setIsRaceMode(false)
+    setIsTracking(false)
     toast({ title: "Race stopped" })
   }, [toast])
 
   const resetTracking = useCallback(() => {
     setWatchlistData((prev) => ({
       ...prev,
-      startTime: null,
+      sessionStartTime: null,
       coins: prev.coins.map((c) => ({
         ...c,
-        startPrice: 0,
-        changesSinceStart: 0,
-        normalizedPrice: 0,
+        sessionStartPrice: 0,
+        sessionROC: 0,
+        momentum: 0,
         priceHistory: [],
-        racePosition: 1,
-        previousPosition: 1,
+        oneMinuteAgoPrice: null,
       })),
     }))
     setIsTracking(false)
-    setIsRaceMode(false)
     setElapsedTime(0)
     toast({ title: "Tracking reset", description: "Start a new race when ready." })
   }, [toast])
@@ -790,7 +737,6 @@ export default function MomentumTracker() {
     })
   }, [])
 
-  // Derived
   const filteredCoins = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return watchlistData.coins
@@ -800,27 +746,26 @@ export default function MomentumTracker() {
   const sortedCoins = useMemo(() => {
     return [...filteredCoins].sort((a, b) => {
       switch (sortBy) {
-        case "rateOfChange":
-          return Math.abs(b.rateOfChange) - Math.abs(a.rateOfChange)
-        case "changesSinceStart":
-          return b.changesSinceStart - a.changesSinceStart
+        case "momentum":
+          return Math.abs(b.momentum) - Math.abs(a.momentum)
+        case "sessionROC":
+          return b.sessionROC - a.sessionROC
         case "currentPrice":
           return b.currentPrice - a.currentPrice
         default:
-          return Math.abs(b.rateOfChange) - Math.abs(a.rateOfChange)
+          return Math.abs(b.momentum) - Math.abs(a.momentum)
       }
     })
   }, [filteredCoins, sortBy])
 
   const bestPerformer = useMemo(() => sortedCoins[0], [sortedCoins])
   const fastestMover = useMemo(
-    () => [...sortedCoins].sort((a, b) => Math.abs(b.rateOfChange) - Math.abs(a.rateOfChange))[0],
+    () => [...sortedCoins].sort((a, b) => Math.abs(b.momentum) - Math.abs(a.momentum))[0],
     [sortedCoins],
   )
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text-2)]">
-      {/* Top Bar */}
       <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/60 shadow-[var(--shadow-1)]">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between gap-4">
@@ -836,8 +781,8 @@ export default function MomentumTracker() {
                         : "bg-[var(--text-muted)]"
                   }`}
                 />
-                <Badge className={isRaceMode ? "status-hot" : isTracking ? "status-active" : "status-neutral"}>
-                  {isRaceMode ? "Race Active" : isTracking ? "Tracking" : "Ready"}
+                <Badge className={isTracking ? "status-active" : "status-neutral"}>
+                  {isTracking ? "Tracking" : "Ready"}
                 </Badge>
                 {connectionStatus === "connected" && (
                   <div className="live-indicator">
@@ -851,7 +796,7 @@ export default function MomentumTracker() {
             <div className="flex items-center gap-2">
               <ThemeToggle />
 
-              {!isRaceMode ? (
+              {!isTracking ? (
                 <Button
                   onClick={startRace}
                   disabled={watchlistData.coins.length === 0}
@@ -881,82 +826,74 @@ export default function MomentumTracker() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="container mx-auto px-4 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="neon-card text-center">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-center mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Card className="neon-card text-center py-3">
+            <CardHeader className="pb-2 pt-3">
+              <div className="flex items-center justify-center mb-2">
                 <Activity className="h-5 w-5 text-[var(--orchid)]" />
               </div>
               <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Watchlist Size</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)] mb-1">{watchlistData.coins.length}</div>
+            <CardContent className="pt-0 pb-3">
+              <div className="text-2xl font-bold text-[var(--text)]">{watchlistData.coins.length}</div>
             </CardContent>
           </Card>
 
-          <Card className="neon-card text-center">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-center mb-3">
+          <Card className="neon-card text-center py-3">
+            <CardHeader className="pb-2 pt-3">
+              <div className="flex items-center justify-center mb-2">
                 <Clock className="h-5 w-5 text-[var(--ice)]" />
               </div>
               <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Elapsed Time</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)] font-mono mb-1">
+            <CardContent className="pt-0 pb-3">
+              <div className="text-2xl font-bold text-[var(--text)] font-mono">
                 {isTracking ? formatElapsedTime(elapsedTime) : "0:00"}
               </div>
             </CardContent>
           </Card>
 
-          <Card className={`neon-card text-center ${bestPerformer ? "ring-2 ring-[var(--mint)]/30" : ""}`}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-center mb-3">
+          <Card className={`neon-card text-center py-3 ${bestPerformer ? "ring-2 ring-[var(--mint)]/30" : ""}`}>
+            <CardHeader className="pb-2 pt-3">
+              <div className="flex items-center justify-center mb-2">
                 <Trophy className="h-5 w-5 text-[var(--mint)]" />
               </div>
-              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Race Leader</CardTitle>
+              <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Session Leader</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)] mb-1">
+            <CardContent className="pt-0 pb-3">
+              <div className="text-2xl font-bold text-[var(--text)]">
                 {bestPerformer?.symbol.split("-")[0] || "N/A"}
               </div>
               {bestPerformer && (
-                <div className="text-sm text-positive font-semibold">
-                  {formatPercentage(bestPerformer.changesSinceStart)}
-                </div>
+                <div className="text-sm text-positive font-semibold">{formatPercentage(bestPerformer.sessionROC)}</div>
               )}
             </CardContent>
           </Card>
 
-          <Card className={`neon-card text-center ${fastestMover ? "ring-2 ring-[var(--amber)]/30" : ""}`}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-center mb-3">
+          <Card className={`neon-card text-center py-3 ${fastestMover ? "ring-2 ring-[var(--amber)]/30" : ""}`}>
+            <CardHeader className="pb-2 pt-3">
+              <div className="flex items-center justify-center mb-2">
                 <Zap className="h-5 w-5 text-[var(--amber)]" />
               </div>
               <CardTitle className="text-sm font-medium text-[var(--text-muted)]">Fastest Mover</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              <div className="text-3xl font-bold text-[var(--text)] mb-1">
-                {fastestMover?.symbol.split("-")[0] || "N/A"}
-              </div>
+            <CardContent className="pt-0 pb-3">
+              <div className="text-2xl font-bold text-[var(--text)]">{fastestMover?.symbol.split("-")[0] || "N/A"}</div>
               {fastestMover && (
                 <div className="text-sm text-[var(--text-muted)] font-semibold">
-                  {Math.abs(fastestMover.rateOfChange).toFixed(2)}%/{rocTimeFrame}
+                  {Math.abs(fastestMover.momentum).toFixed(2)}%/min
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Main */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "table" | "chart")} className="space-y-4">
           <TabsContent value="table">
             <Card className="neon-card">
               <CardHeader className="border-b border-[var(--border)]">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  {/* Controls */}
                   <div className="flex items-center gap-4">
                     <TabsList className="bg-[var(--surface-2)] border border-[var(--border)]">
                       <TabsTrigger
@@ -976,54 +913,28 @@ export default function MomentumTracker() {
                       </TabsTrigger>
                     </TabsList>
 
-                    {/* ROC Timeframe Selector */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
                           className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
                         >
-                          ROC: {rocTimeFrame}
-                          <ChevronDown className="ml-2 h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="dropdown-menu-content">
-                        {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
-                          <DropdownMenuItem
-                            key={tf}
-                            onClick={() => setRocTimeFrame(tf)}
-                            className={`dropdown-menu-item ${rocTimeFrame === tf ? "bg-[var(--orchid)] text-white" : ""}`}
-                          >
-                            {tf}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    {/* Sort Selector */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="bg-[var(--surface-2)] border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-                        >
-                          Sort:{" "}
-                          {sortBy === "rateOfChange" ? "Fastest" : sortBy === "changesSinceStart" ? "Race %" : "Price"}
+                          Sort: {sortBy === "momentum" ? "Momentum" : sortBy === "sessionROC" ? "Session %" : "Price"}
                           <ChevronDown className="ml-2 h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="dropdown-menu-content">
                         <DropdownMenuItem
-                          onClick={() => setSortBy("rateOfChange")}
-                          className={`dropdown-menu-item ${sortBy === "rateOfChange" ? "bg-[var(--orchid)] text-white" : ""}`}
+                          onClick={() => setSortBy("momentum")}
+                          className={`dropdown-menu-item ${sortBy === "momentum" ? "bg-[var(--orchid)] text-white" : ""}`}
                         >
-                          Fastest Movers
+                          Fastest Movers (Momentum)
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => setSortBy("changesSinceStart")}
-                          className={`dropdown-menu-item ${sortBy === "changesSinceStart" ? "bg-[var(--orchid)] text-white" : ""}`}
+                          onClick={() => setSortBy("sessionROC")}
+                          className={`dropdown-menu-item ${sortBy === "sessionROC" ? "bg-[var(--orchid)] text-white" : ""}`}
                         >
-                          Race Performance
+                          Session Performance
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setSortBy("currentPrice")}
@@ -1035,7 +946,6 @@ export default function MomentumTracker() {
                     </DropdownMenu>
                   </div>
 
-                  {/* Search + Add */}
                   <div className="flex items-center gap-3 justify-center md:justify-end">
                     <AddCoinTypeahead
                       value={query}
@@ -1058,37 +968,16 @@ export default function MomentumTracker() {
                     <Table>
                       <TableHeader className="sticky top-0 bg-[var(--surface-2)] z-10">
                         <TableRow className="border-[var(--border)]">
-                          <TableHead className="text-[var(--text-muted)]" title="Cryptocurrency asset">
-                            Asset
-                          </TableHead>
-                          <TableHead className="text-right text-[var(--text-muted)]" title="Current market price">
-                            Price
-                          </TableHead>
-                          <TableHead
-                            className="text-right text-[var(--text-muted)]"
-                            title="Percentage change since race started"
-                          >
-                            Race %
-                          </TableHead>
-                          <TableHead
-                            className="text-right text-[var(--text-muted)]"
-                            title={`Rate of change per ${rocTimeFrame} - average pace of price movement`}
-                          >
-                            ROC ({rocTimeFrame})
-                          </TableHead>
-                          <TableHead
-                            className="text-right text-[var(--text-muted)]"
-                            title="24-hour trading volume (estimated - live data not available)"
-                          >
-                            Volume (24h)
-                          </TableHead>
+                          <TableHead className="text-[var(--text-muted)]">Asset</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Price</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Session %</TableHead>
+                          <TableHead className="text-right text-[var(--text-muted)]">Momentum (%/min)</TableHead>
                           <TableHead className="text-center text-[var(--text-muted)] w-16">Remove</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {sortedCoins.map((coin, index) => {
-                          const isTopPerformer =
-                            index === 0 && sortBy === "rateOfChange" && Math.abs(coin.rateOfChange) > 0.1
+                          const isTopPerformer = index === 0 && sortBy === "momentum" && Math.abs(coin.momentum) > 0.1
                           return (
                             <TableRow
                               key={coin.id}
@@ -1097,7 +986,7 @@ export default function MomentumTracker() {
                               }`}
                               onClick={() => handleCoinClick(coin.id)}
                             >
-                              <TableCell className="table-cell">
+                              <TableCell className="table-cell py-2">
                                 <div className="flex items-center gap-3">
                                   <div
                                     className="size-8 rounded-full grid place-items-center text-white text-sm font-bold brand-shimmer"
@@ -1107,67 +996,51 @@ export default function MomentumTracker() {
                                     {coin.symbol.split("-")[0].charAt(0)}
                                   </div>
                                   <div>
-                                    <div className="font-bold text-lg text-[var(--text)]">
+                                    <div className="font-bold text-base text-[var(--text)]">
                                       {coin.symbol.split("-")[0]}
                                     </div>
                                     <div className="text-xs text-[var(--text-muted)]">{coin.name}</div>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right font-mono text-[var(--text)] table-cell text-base font-semibold">
+                              <TableCell className="text-right font-mono text-[var(--text)] table-cell text-base font-semibold py-2">
                                 ${formatPrice(coin.currentPrice)}
                               </TableCell>
-                              <TableCell className="text-right table-cell">
+                              <TableCell className="text-right table-cell py-2">
                                 <span
                                   className={`font-bold text-base ${
-                                    coin.changesSinceStart > 0
+                                    coin.sessionROC > 0
                                       ? "text-positive"
-                                      : coin.changesSinceStart < 0
+                                      : coin.sessionROC < 0
                                         ? "text-negative"
                                         : "text-[var(--text-muted)]"
                                   }`}
                                 >
-                                  {watchlistData.startTime ? formatPercentage(coin.changesSinceStart) : "—"}
+                                  {watchlistData.sessionStartTime ? formatPercentage(coin.sessionROC) : "—"}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-right table-cell">
+                              <TableCell className="text-right table-cell py-2">
                                 <div className="inline-flex items-center gap-2">
-                                  {Math.abs(coin.rateOfChange) > 0.1 &&
-                                    (coin.rateOfChange > 0 ? (
+                                  {Math.abs(coin.momentum) > 0.1 &&
+                                    (coin.momentum > 0 ? (
                                       <TrendingUp className="h-4 w-4 text-positive" aria-hidden="true" />
                                     ) : (
                                       <TrendingDown className="h-4 w-4 text-negative" aria-hidden="true" />
                                     ))}
                                   <span
                                     className={`text-base font-bold ${
-                                      Math.abs(coin.rateOfChange) > 0.5
-                                        ? coin.rateOfChange > 0
+                                      Math.abs(coin.momentum) > 0.5
+                                        ? coin.momentum > 0
                                           ? "text-positive"
                                           : "text-negative"
                                         : "text-[var(--text-muted)]"
                                     }`}
                                   >
-                                    {Math.abs(coin.rateOfChange).toFixed(2)}%
+                                    {Math.abs(coin.momentum).toFixed(2)}%
                                   </span>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-right table-cell">
-                                <span className="text-xs text-[var(--text-muted)]">
-                                  ${(() => {
-                                    // Use coin symbol hash for consistent volume
-                                    const hash = coin.symbol.split("").reduce((a, b) => {
-                                      a = (a << 5) - a + b.charCodeAt(0)
-                                      return a & a
-                                    }, 0)
-                                    const baseVolume = (Math.abs(hash) % 1000000000) + 100000000 // 100M to 1.1B range
-                                    const volume = baseVolume * (coin.currentPrice / 100) // Scale by price
-                                    return volume > 1000000000
-                                      ? `${(volume / 1000000000).toFixed(1)}B`
-                                      : `${(volume / 1000000).toFixed(0)}M`
-                                  })()}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-center table-cell">
+                              <TableCell className="text-center table-cell py-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1214,12 +1087,11 @@ export default function MomentumTracker() {
                     <div>
                       <CardTitle className="text-base text-[var(--text)]">Momentum Chart</CardTitle>
                       <CardDescription className="text-[var(--text-muted)]">
-                        Normalized performance since start
+                        Session performance since start
                       </CardDescription>
                     </div>
                   </div>
 
-                  {/* Timeframe selector */}
                   <div className="flex items-center gap-1 border border-[var(--border)] rounded-lg p-1 bg-[var(--surface-2)]">
                     {(["1min", "5min", "15min", "1h", "1d"] as TimeFrame[]).map((tf) => (
                       <Button
@@ -1241,7 +1113,7 @@ export default function MomentumTracker() {
               <CardContent className="h-[40rem] p-0">
                 <RaceChart
                   coins={sortedCoins}
-                  startTime={watchlistData.startTime}
+                  startTime={watchlistData.sessionStartTime}
                   timeFrame={timeFrame}
                   visibleCoins={visibleCoins}
                   onToggleCoin={toggleCoinVisibility}

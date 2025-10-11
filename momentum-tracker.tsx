@@ -24,7 +24,7 @@ import {
   Pause,
   Grid3X3,
 } from "lucide-react"
-import { AddCoinModal } from "./components/ui/add-coin-modal"
+// Removed unused import: import { AddCoinModal } from "./components/ui/add-coin-modal"
 
 // Types
 interface CoinData {
@@ -247,7 +247,7 @@ function RaceChart({
 
       const minChange = Math.min(...allNormalizedPrices, -1)
       const maxChange = Math.max(...allNormalizedPrices, 1)
-      const changeRange = Math.max(maxChange - minChange, 2)
+      const changeRange = Math.max(maxChange - minChange, 2) // Use changeRange directly
 
       // Draw grid lines
       ctx.strokeStyle = "#374151"
@@ -305,7 +305,7 @@ function RaceChart({
             // Use quadratic curves for smoother lines
             const prevPoint = chartData[pointIndex - 1]
             const prevX = padding + ((pointIndex - 1) / (chartData.length - 1)) * chartWidth
-            const prevY = padding + ((maxChange - prevPoint.changesSinceStart) / changeRange) * chartHeight
+            const prevY = padding + ((maxChange - prevPoint.changesSinceStart) / changeRange) * chartHeight // Corrected 'range' to 'changeRange'
 
             const cpX = (prevX + x) / 2
             const cpY = (prevY + y) / 2
@@ -324,7 +324,7 @@ function RaceChart({
         if (chartData.length > 0) {
           const lastPoint = chartData[chartData.length - 1]
           const x = padding + chartWidth
-          const y = padding + ((maxChange - lastPoint.changesSinceStart) / changeRange) * chartHeight
+          const y = padding + ((maxChange - lastPoint.changesSinceStart) / changeRange) * chartHeight // Corrected 'range' to 'changeRange'
 
           // Animate dot position
           const previousY = previousDataRef.current.get(coin.id) || y
@@ -605,79 +605,79 @@ function MiniSparkline({ data, isPositive }: { data: number[]; isPositive: boole
 }
 
 // Add Coin Modal Component
-// function AddCoinModal({
-//   isOpen,
-//   onClose,
-//   onAdd,
-//   existingSymbols,
-// }: {
-//   isOpen: boolean
-//   onClose: () => void
-//   onAdd: (coin: any) => void
-//   existingSymbols: string[]
-// }) {
-//   const [searchTerm, setSearchTerm] = useState("")
+function AddCoinModal({
+  isOpen,
+  onClose,
+  onAdd,
+  existingSymbols,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onAdd: (coin: any) => void
+  existingSymbols: string[]
+}) {
+  const [searchTerm, setSearchTerm] = useState("")
 
-//   const filteredCoins = MOCK_COINS.filter(
-//     (coin) =>
-//       !existingSymbols.includes(coin.symbol) &&
-//       (coin.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-//         coin.name.toLowerCase().includes(searchTerm.toLowerCase())),
-//   )
+  const filteredCoins = MOCK_COINS.filter(
+    (coin) =>
+      !existingSymbols.includes(coin.symbol) &&
+      (coin.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        coin.name.toLowerCase().includes(searchTerm.toLowerCase())),
+  )
 
-//   if (!isOpen) return null
+  if (!isOpen) return null
 
-//   return (
-//     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-//       <div className="bg-gradient-to-br from-[#1e1f2a] to-[#252631] rounded-xl border border-gray-700/50 p-6 w-full max-w-md max-h-96">
-//         <div className="flex items-center justify-between mb-4">
-//           <h3 className="text-lg font-bold text-white">Add Coin to Watchlist</h3>
-//           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-//             <X className="h-5 w-5" />
-//           </button>
-//         </div>
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-gradient-to-br from-[#1e1f2a] to-[#252631] rounded-xl border border-gray-700/50 p-6 w-full max-w-md max-h-96">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-white">Add Coin to Watchlist</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-//         <div className="relative mb-4">
-//           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-//           <input
-//             type="text"
-//             placeholder="Search coins..."
-//             value={searchTerm}
-//             onChange={(e) => setSearchTerm(e.target.value)}
-//             className="w-full pl-10 pr-4 py-2 bg-[#2a2d3a] border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-//           />
-//         </div>
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search coins..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-[#2a2d3a] border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+          />
+        </div>
 
-//         <div className="space-y-2 max-h-48 overflow-y-auto">
-//           {filteredCoins.map((coin) => (
-//             <button
-//               key={coin.symbol}
-//               onClick={() => {
-//                 onAdd(coin)
-//                 onClose()
-//                 setSearchTerm("")
-//               }}
-//               className="w-full flex items-center gap-3 p-3 rounded-lg bg-[#2a2d3a] hover:bg-[#3a3d4a] transition-colors text-left"
-//             >
-//               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-semibold">
-//                 {coin.symbol.charAt(0)}
-//               </div>
-//               <div className="flex-1 min-w-0">
-//                 <div className="font-semibold text-white text-sm truncate">{coin.symbol}</div>
-//                 <div className="text-xs text-gray-400 truncate">{coin.name}</div>
-//               </div>
-//             </button>
-//           ))}
-//           {filteredCoins.length === 0 && (
-//             <div className="text-center py-4 text-gray-400 text-sm">
-//               {existingSymbols.length === MOCK_COINS.length ? "All coins already added" : "No coins found"}
-//             </div>
-//           )}
-//         </div>
-//       </div>
-//     </div>
-//   )
-// }
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {filteredCoins.map((coin) => (
+            <button
+              key={coin.symbol}
+              onClick={() => {
+                onAdd(coin)
+                onClose()
+                setSearchTerm("")
+              }}
+              className="w-full flex items-center gap-3 p-3 rounded-lg bg-[#2a2d3a] hover:bg-[#3a3d4a] transition-colors text-left"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-semibold">
+                {coin.symbol.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-white text-sm truncate">{coin.symbol}</div>
+                <div className="text-xs text-gray-400 truncate">{coin.name}</div>
+              </div>
+            </button>
+          ))}
+          {filteredCoins.length === 0 && (
+            <div className="text-center py-4 text-gray-400 text-sm">
+              {existingSymbols.length === MOCK_COINS.length ? "All coins already added" : "No coins found"}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // Reset Confirmation Modal
 function ResetConfirmModal({
@@ -743,57 +743,54 @@ export default function MomentumTracker() {
   const symbols = watchlistData.coins.map((coin) => coin.symbol)
   const priceData = useWebSocket(symbols, timeFrame)
 
-  // Debounced update function for smooth state updates
-  const debouncedUpdateCoins = useMemo(
-    () =>
-      debounce((updatedCoins: CoinData[]) => {
-        setWatchlistData((prev) => ({
-          ...prev,
-          coins: updatedCoins,
-        }))
-      }, 100), // Slightly slower for smoother transitions
-    [],
-  )
-
   // Update coin data when new price data arrives
   useEffect(() => {
-    if (priceData.size === 0) return
+    if (priceData.size === 0 || watchlistData.coins.length === 0) return
 
-    const updatedCoins = watchlistData.coins.map((coin) => {
-      const newPrice = priceData.get(coin.symbol)
-      if (!newPrice) return coin
+    setWatchlistData((prev) => {
+      const updatedCoins = prev.coins.map((coin) => {
+        const newPrice = priceData.get(coin.symbol)
+        if (!newPrice || newPrice === coin.currentPrice) return coin
 
-      const now = Date.now()
-      const changesSinceStart = calculateChangesSinceStart(newPrice, coin.startPrice)
-      const normalizedPrice = isRaceMode ? changesSinceStart : coin.normalizedPrice
+        const now = Date.now()
+        const changesSinceStart = calculateChangesSinceStart(newPrice, coin.startPrice)
+        const normalizedPrice = isRaceMode ? changesSinceStart : coin.normalizedPrice
 
-      const newPriceHistory = [
-        ...coin.priceHistory.slice(-100), // Keep last 100 points
-        { price: newPrice, timestamp: now, changesSinceStart },
-      ]
+        const newPriceHistory = [
+          ...coin.priceHistory.slice(-100), // Keep last 100 points
+          { price: newPrice, timestamp: now, changesSinceStart },
+        ]
+
+        return {
+          ...coin,
+          currentPrice: newPrice,
+          changesSinceStart,
+          normalizedPrice,
+          rateOfChange: calculateRateOfChange(newPriceHistory),
+          lastUpdated: now,
+          priceHistory: newPriceHistory,
+        }
+      })
+
+      // Update race positions with smooth transitions
+      if (isRaceMode) {
+        const sortedByPerformance = [...updatedCoins].sort((a, b) => b.normalizedPrice - a.normalizedPrice)
+        sortedByPerformance.forEach((coin, index) => {
+          coin.previousPosition = coin.racePosition
+          coin.racePosition = index + 1
+        })
+        return {
+          ...prev,
+          coins: sortedByPerformance,
+        }
+      }
 
       return {
-        ...coin,
-        currentPrice: newPrice,
-        changesSinceStart,
-        normalizedPrice,
-        rateOfChange: calculateRateOfChange(newPriceHistory),
-        lastUpdated: now,
-        priceHistory: newPriceHistory,
+        ...prev,
+        coins: updatedCoins,
       }
     })
-
-    // Update race positions with smooth transitions
-    if (isRaceMode) {
-      const sortedByPerformance = [...updatedCoins].sort((a, b) => b.normalizedPrice - a.normalizedPrice)
-      sortedByPerformance.forEach((coin, index) => {
-        coin.previousPosition = coin.racePosition
-        coin.racePosition = index + 1
-      })
-    }
-
-    debouncedUpdateCoins(updatedCoins)
-  }, [priceData, watchlistData.coins, isRaceMode, debouncedUpdateCoins])
+  }, [priceData, isRaceMode])
 
   const startRace = useCallback(() => {
     const now = Date.now()

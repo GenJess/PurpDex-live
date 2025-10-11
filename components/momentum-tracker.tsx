@@ -54,7 +54,23 @@ interface WatchlistData {
 type MomentumTimeframe = "30s" | "1m" | "2m" | "5m"
 type SortField = "sessionROC" | "momentum" | "currentPrice"
 
-// REAL LEVERAGE PAIRS - Only coins with active leverage trading on Coinbase
+// LEVERAGE PAIRS - COINBASE ADVANCED TRADE
+// These are the ONLY coins available for tracking in this app
+// Filtering logic: Only pairs with confirmed leverage trading on Coinbase Advanced Trade
+//
+// To verify a pair has leverage:
+// 1. Check Coinbase Advanced Trade leverage products
+// 2. Pair must have perpetual futures or margin trading
+// 3. Format: "{ASSET}-USD" (e.g., "BTC-USD")
+//
+// Current leverage pairs (as of 2024):
+// - BTC, ETH, SOL: High liquidity, 3-10x leverage available
+// - AVAX, LINK, DOGE, ADA, UNI: Mid-cap with 2-5x leverage
+//
+// This list is intentionally limited to ensure:
+// - Real-time WebSocket data availability
+// - Sufficient liquidity for momentum tracking
+// - Active leverage trading markets
 const LEVERAGE_PAIRS = [
   { symbol: "BTC-USD", name: "Bitcoin", coinbaseId: "BTC-USD" },
   { symbol: "ETH-USD", name: "Ethereum", coinbaseId: "ETH-USD" },

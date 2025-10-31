@@ -1,8 +1,22 @@
-"use client"
+"use client";
 
-import CryptoTerminal from "../bloomberg-terminal"
-import "../app/globals.css"
+import { useEffect } from 'react';
+import { OnchainKitProvider } from '@coinbase/onchainkit';
+import { base } from 'viem/chains';
+import { useMiniKit } from '@coinbase/onchainkit/minikit';
+import CryptoTerminal from "../bloomberg-terminal";
+import "../app/globals.css";
 
 export default function Page() {
-  return <CryptoTerminal />
+  const { setFrameReady } = useMiniKit();
+
+  useEffect(() => {
+    setFrameReady();
+  }, [setFrameReady]);
+
+  return (
+    <OnchainKitProvider apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY} chain={base} miniKit={{ enabled: true }}>
+      <CryptoTerminal />
+    </OnchainKitProvider>
+  );
 }

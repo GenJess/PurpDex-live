@@ -196,3 +196,14 @@
   box-shadow: var(--shadow-2);
   border-color: var(--border);
 }
+
+/* Add positive/negative color utilities for consistent theming */
+@layer utilities {
+  .text-positive {
+    color: var(--mint);
+  }
+
+  .text-negative {
+    color: var(--rose);
+  }
+}

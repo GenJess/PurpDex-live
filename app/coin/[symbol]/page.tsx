@@ -1,35 +1,28 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, TrendingUp, TrendingDown, Activity, BarChart3 } from "lucide-react"
+import { ArrowLeft, TrendingUp, TrendingDown, Activity, BarChart3, Wifi, WifiOff } from "lucide-react"
 import { useCoinbase } from "@/hooks/use-coinbase"
+import { useCoinbaseProducts } from "@/hooks/use-coinbase-products"
 import { calculateMomentum, getTimeframeMs, type MomentumTimeframe, type PricePoint } from "@/lib/momentum-calculator"
-
-const COIN_DATA: Record<string, { symbol: string; name: string; coinbaseId: string }> = {
-  btc: { symbol: "BTC-USD", name: "Bitcoin", coinbaseId: "BTC-USD" },
-  eth: { symbol: "ETH-USD", name: "Ethereum", coinbaseId: "ETH-USD" },
-  sol: { symbol: "SOL-USD", name: "Solana", coinbaseId: "SOL-USD" },
-  ada: { symbol: "ADA-USD", name: "Cardano", coinbaseId: "ADA-USD" },
-  doge: { symbol: "DOGE-USD", name: "Dogecoin", coinbaseId: "DOGE-USD" },
-  avax: { symbol: "AVAX-USD", name: "Avalanche", coinbaseId: "AVAX-USD" },
-  uni: { symbol: "UNI-USD", name: "Uniswap", coinbaseId: "UNI-USD" },
-  link: { symbol: "LINK-USD", name: "Chainlink", coinbaseId: "LINK-USD" },
-}
 
 const TIMEFRAMES: MomentumTimeframe[] = ["30s", "1m", "2m", "5m"]
 
 const formatPrice = (price: number): string => {
+  if (!price || !Number.isFinite(price)) return "—"
   if (price < 0.001) return price.toFixed(8)
   if (price < 1) return price.toFixed(4)
   if (price < 100) return price.toFixed(2)
   return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const formatPercentage = (pct: number): string => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`
+const formatPercentage = (pct: number): string => {
+  if (!Number.isFinite(pct)) return "—"
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`
+}
 
 function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coinName: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -48,67 +41,42 @@ function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coi
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, rect.width, rect.height)
 
-    const padding = { top: 40, right: 60, bottom: 40, left: 60 }
+    const padding = { top: 30, right: 50, bottom: 30, left: 60 }
     const chartWidth = rect.width - padding.left - padding.right
     const chartHeight = rect.height - padding.top - padding.bottom
 
     const prices = priceHistory.map((p) => p.price)
-    const timestamps = priceHistory.map((p) => p.timestamp)
     const minPrice = Math.min(...prices)
     const maxPrice = Math.max(...prices)
     const priceRange = maxPrice - minPrice || 1
 
-    // Grid and axes
-    ctx.strokeStyle = "#3C4043"
+    // Grid lines
+    ctx.strokeStyle = "hsl(210, 15%, 15%)"
     ctx.lineWidth = 1
 
-    // Horizontal grid lines
-    for (let i = 0; i <= 5; i++) {
-      const y = padding.top + (i / 5) * chartHeight
-      ctx.setLineDash([4, 4])
+    for (let i = 0; i <= 4; i++) {
+      const y = padding.top + (i / 4) * chartHeight
+      ctx.setLineDash([2, 4])
       ctx.beginPath()
       ctx.moveTo(padding.left, y)
       ctx.lineTo(padding.left + chartWidth, y)
       ctx.stroke()
 
       // Price labels
-      const priceValue = maxPrice - (i / 5) * priceRange
-      ctx.fillStyle = "#9AA0A6"
-      ctx.font = "11px system-ui"
+      const priceValue = maxPrice - (i / 4) * priceRange
+      ctx.fillStyle = "hsl(210, 10%, 55%)"
+      ctx.font = "11px monospace"
       ctx.textAlign = "right"
       ctx.textBaseline = "middle"
       ctx.fillText(`$${formatPrice(priceValue)}`, padding.left - 8, y)
     }
 
-    // Vertical grid lines
-    const timeSteps = 5
-    for (let i = 0; i <= timeSteps; i++) {
-      const x = padding.left + (i / timeSteps) * chartWidth
-      ctx.setLineDash([4, 4])
-      ctx.beginPath()
-      ctx.moveTo(x, padding.top)
-      ctx.lineTo(x, padding.top + chartHeight)
-      ctx.stroke()
-
-      // Time labels
-      if (i < timestamps.length) {
-        const timeIndex = Math.floor((i / timeSteps) * (timestamps.length - 1))
-        const time = new Date(timestamps[timeIndex])
-        const timeLabel = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        ctx.fillStyle = "#9AA0A6"
-        ctx.font = "11px system-ui"
-        ctx.textAlign = "center"
-        ctx.textBaseline = "top"
-        ctx.fillText(timeLabel, x, padding.top + chartHeight + 8)
-      }
-    }
-
     ctx.setLineDash([])
 
-    // Draw price line
+    // Draw price line - cyan color
     ctx.beginPath()
-    ctx.strokeStyle = "#00E5FF"
-    ctx.lineWidth = 2.5
+    ctx.strokeStyle = "hsl(185, 100%, 50%)"
+    ctx.lineWidth = 2
     ctx.lineJoin = "round"
     ctx.lineCap = "round"
 
@@ -124,13 +92,7 @@ function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coi
     })
     ctx.stroke()
 
-    // Add glow effect
-    ctx.shadowColor = "#00E5FF"
-    ctx.shadowBlur = 8
-    ctx.stroke()
-    ctx.shadowBlur = 0
-
-    // Draw gradient fill under line
+    // Gradient fill
     ctx.beginPath()
     ctx.moveTo(padding.left, padding.top + chartHeight)
     priceHistory.forEach((point, i) => {
@@ -142,12 +104,12 @@ function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coi
     ctx.closePath()
 
     const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight)
-    gradient.addColorStop(0, "rgba(0, 229, 255, 0.2)")
-    gradient.addColorStop(1, "rgba(0, 229, 255, 0.0)")
+    gradient.addColorStop(0, "hsla(185, 100%, 50%, 0.15)")
+    gradient.addColorStop(1, "hsla(185, 100%, 50%, 0)")
     ctx.fillStyle = gradient
     ctx.fill()
 
-    // Draw current price dot
+    // Current price dot
     if (priceHistory.length > 0) {
       const lastPoint = priceHistory[priceHistory.length - 1]
       const x = padding.left + chartWidth
@@ -155,20 +117,17 @@ function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coi
 
       ctx.beginPath()
       ctx.arc(x, y, 4, 0, 2 * Math.PI)
-      ctx.fillStyle = "#00E5FF"
+      ctx.fillStyle = "hsl(185, 100%, 50%)"
       ctx.fill()
-      ctx.strokeStyle = "#121212"
-      ctx.lineWidth = 2
-      ctx.stroke()
     }
   }, [priceHistory, coinName])
 
   if (priceHistory.length < 2) {
     return (
-      <div className="h-full flex items-center justify-center text-[#9AA0A6]">
+      <div className="h-full flex items-center justify-center text-[hsl(210,10%,55%)]">
         <div className="text-center">
           <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p className="text-sm">Loading price data...</p>
+          <p className="text-sm">Waiting for price data...</p>
         </div>
       </div>
     )
@@ -180,15 +139,29 @@ function CoinChart({ priceHistory, coinName }: { priceHistory: PricePoint[]; coi
 export default function CoinPage() {
   const params = useParams()
   const router = useRouter()
-  const symbol = params.symbol as string
+  const symbol = (params.symbol as string).toUpperCase()
 
-  const coinInfo = COIN_DATA[symbol.toLowerCase()]
-  const { book } = useCoinbase(coinInfo ? [coinInfo.coinbaseId] : [])
+  const { products, loading: productsLoading } = useCoinbaseProducts()
+  const coinInfo = useMemo(() => {
+    const productId = `${symbol}-USD`
+    const product = products.find((p) => p.product_id === productId)
+    if (product) {
+      return {
+        symbol: product.product_id,
+        name: product.base_name,
+        coinbaseId: product.product_id,
+      }
+    }
+    return null
+  }, [products, symbol])
+
+  const { book, status, error } = useCoinbase(coinInfo ? [coinInfo.coinbaseId] : [])
 
   const [selectedTimeframe, setSelectedTimeframe] = useState<MomentumTimeframe>("1m")
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [currentPrice, setCurrentPrice] = useState(0)
   const [momentum, setMomentum] = useState(0)
+  const [startPrice, setStartPrice] = useState<number | null>(null)
 
   useEffect(() => {
     if (!coinInfo || !book[coinInfo.coinbaseId]) return
@@ -205,82 +178,105 @@ export default function CoinPage() {
     setCurrentPrice(latest.price)
     setPriceHistory(history)
 
+    // Set start price on first data
+    if (startPrice === null && latest.price > 0) {
+      setStartPrice(latest.price)
+    }
+
     const timeframeMs = getTimeframeMs(selectedTimeframe)
     const calculatedMomentum = calculateMomentum(history, timeframeMs)
     setMomentum(calculatedMomentum)
-  }, [book, coinInfo, selectedTimeframe])
+  }, [book, coinInfo, selectedTimeframe, startPrice])
 
-  if (!coinInfo) {
+  // Loading state
+  if (productsLoading) {
     return (
-      <div className="flex flex-col h-screen bg-[#121212] text-[#E3E3E3]">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4">Coin Not Found</h1>
-            <p className="text-[#9AA0A6] mb-6">The coin "{symbol}" is not available.</p>
-            <Button
-              onClick={() => router.push("/")}
-              className="bg-[#A8C7FA] hover:bg-[#8AB4F8] text-[#121212] px-6 py-2 rounded-lg font-medium"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
-            </Button>
-          </div>
+      <div className="min-h-screen bg-[hsl(0,0%,0%)] text-[hsl(210,20%,90%)] flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-12 h-12 mx-auto mb-4 text-[hsl(185,100%,50%)] animate-pulse" />
+          <p className="text-[hsl(210,10%,55%)]">Loading...</p>
         </div>
       </div>
     )
   }
 
-  const priceChange = priceHistory.length >= 2 ? currentPrice - priceHistory[0].price : 0
-  const priceChangePercent = priceHistory.length >= 2 ? (priceChange / priceHistory[0].price) * 100 : 0
+  // Coin not found
+  if (!coinInfo) {
+    return (
+      <div className="min-h-screen bg-[hsl(0,0%,0%)] text-[hsl(210,20%,90%)] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Coin Not Found</h1>
+          <p className="text-[hsl(210,10%,55%)] mb-6">The coin "{symbol}" is not available on Coinbase.</p>
+          <Button
+            onClick={() => router.push("/")}
+            className="bg-[hsl(185,100%,50%)] hover:bg-[hsl(185,100%,45%)] text-black font-mono"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const sessionChange = startPrice && currentPrice ? ((currentPrice - startPrice) / startPrice) * 100 : 0
 
   return (
-    <div className="flex flex-col h-screen bg-[#121212] text-[#E3E3E3] overflow-hidden">
+    <div className="min-h-screen bg-[hsl(0,0%,0%)] text-[hsl(210,20%,90%)] flex flex-col">
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-[#3C4043] bg-[#1E1E1E]/95 backdrop-blur-sm">
+      <header className="flex-shrink-0 border-b border-[hsl(210,15%,18%)] bg-[hsl(210,15%,6%)]">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
             <Button
               variant="ghost"
               onClick={() => router.push("/")}
-              className="text-[#9AA0A6] hover:text-[#E3E3E3] hover:bg-[#292A2D] rounded-lg"
+              className="text-[hsl(210,10%,55%)] hover:text-[hsl(210,20%,90%)] hover:bg-[hsl(210,15%,12%)] font-mono"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
+              Back
             </Button>
+
+            <div className="flex items-center gap-2">
+              {status === "connected" ? (
+                <Wifi className="w-4 h-4 text-[hsl(185,100%,50%)]" />
+              ) : (
+                <WifiOff className="w-4 h-4 text-[hsl(210,10%,55%)]" />
+              )}
+              <span className="text-xs text-[hsl(210,10%,55%)] font-mono">
+                {status === "connected" ? "LIVE" : "CONNECTING"}
+              </span>
+            </div>
           </div>
 
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="size-12 md:size-14 rounded-full bg-gradient-to-br from-[#A8C7FA] to-[#00E5FF] text-[#121212] text-xl md:text-2xl font-bold grid place-items-center flex-shrink-0">
-                {coinInfo.symbol.split("-")[0].charAt(0)}
+              <div className="w-12 h-12 rounded bg-[hsl(185,100%,50%)] text-black text-xl font-bold font-mono flex items-center justify-center">
+                {symbol.slice(0, 2)}
               </div>
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold">{coinInfo.name}</h1>
-                <p className="text-[#9AA0A6] text-sm md:text-base">{coinInfo.symbol.split("-")[0]}</p>
+                <h1 className="text-2xl font-bold">{coinInfo.name}</h1>
+                <p className="text-[hsl(210,10%,55%)] font-mono">{symbol}</p>
               </div>
-              {priceHistory.length >= 2 && (
+              {startPrice && (
                 <Badge
-                  className={`${priceChangePercent >= 0 ? "bg-[#00E5FF]/20 text-[#00E5FF] border-[#00E5FF]/30" : "bg-[#FF4D6D]/20 text-[#FF4D6D] border-[#FF4D6D]/30"}`}
+                  className={`${sessionChange >= 0 ? "bg-[hsl(145,80%,45%)]/20 text-[hsl(145,80%,45%)]" : "bg-[hsl(0,75%,55%)]/20 text-[hsl(0,75%,55%)]"}`}
                 >
-                  {priceChangePercent >= 0 ? "+" : ""}
-                  {priceChangePercent.toFixed(2)}% Session
+                  {formatPercentage(sessionChange)} session
                 </Badge>
               )}
             </div>
 
             {/* Timeframe Selector */}
-            <div className="flex items-center gap-1 bg-[#1E1E1E] rounded-lg p-1 border border-[#3C4043]">
+            <div className="flex items-center gap-0.5 bg-[hsl(210,15%,8%)] rounded p-0.5 border border-[hsl(210,15%,18%)]">
               {TIMEFRAMES.map((tf) => (
                 <button
                   key={tf}
                   onClick={() => setSelectedTimeframe(tf)}
-                  className={`px-3 py-1.5 rounded-md text-xs md:text-sm transition-all font-medium ${
+                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
                     selectedTimeframe === tf
-                      ? "bg-[#A8C7FA] text-[#121212] shadow-lg"
-                      : "text-[#9AA0A6] hover:text-[#E3E3E3] hover:bg-[#292A2D]"
+                      ? "bg-[hsl(185,100%,50%)] text-black"
+                      : "text-[hsl(210,10%,55%)] hover:text-[hsl(210,20%,90%)] hover:bg-[hsl(210,15%,12%)]"
                   }`}
-                  aria-label={`Set timeframe to ${tf}`}
-                  aria-pressed={selectedTimeframe === tf}
                 >
                   {tf}
                 </button>
@@ -290,96 +286,59 @@ export default function CoinPage() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto px-4 py-6">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="h-5 w-5 text-[#A8C7FA]" />
-                  <CardTitle className="text-sm font-medium text-[#9AA0A6]">Current Price</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="text-2xl md:text-3xl font-bold text-[#E3E3E3] font-mono">
-                  ${currentPrice ? formatPrice(currentPrice) : "Loading..."}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="h-5 w-5 text-[#00E5FF]" />
-                  <CardTitle className="text-sm font-medium text-[#9AA0A6]">Session Change</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div
-                  className={`text-2xl md:text-3xl font-bold flex items-center gap-2 ${
-                    priceChangePercent >= 0 ? "text-[#00E5FF]" : "text-[#FF4D6D]"
-                  }`}
-                >
-                  {priceChangePercent !== 0 &&
-                    (priceChangePercent > 0 ? (
-                      <TrendingUp className="h-5 w-5" />
-                    ) : (
-                      <TrendingDown className="h-5 w-5" />
-                    ))}
-                  {priceHistory.length >= 2 ? formatPercentage(priceChangePercent) : "—"}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <BarChart3 className="h-5 w-5 text-[#FFAE2B]" />
-                  <CardTitle className="text-sm font-medium text-[#9AA0A6]">Momentum ({selectedTimeframe})</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div
-                  className={`text-2xl md:text-3xl font-bold ${
-                    Math.abs(momentum) > 0.5 ? (momentum > 0 ? "text-[#00E5FF]" : "text-[#FF4D6D]") : "text-[#9AA0A6]"
-                  }`}
-                >
-                  {formatPercentage(momentum)}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-lg">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="h-5 w-5 text-[#9C6BFF]" />
-                  <CardTitle className="text-sm font-medium text-[#9AA0A6]">Price Change</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div
-                  className={`text-2xl md:text-3xl font-bold ${priceChange >= 0 ? "text-[#00E5FF]" : "text-[#FF4D6D]"}`}
-                >
-                  {priceHistory.length >= 2 ? `$${formatPrice(Math.abs(priceChange))}` : "—"}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Chart */}
-          <Card className="bg-[#1E1E1E] border-[#3C4043] rounded-lg shadow-xl overflow-hidden">
-            <CardHeader className="border-b border-[#3C4043]">
-              <CardTitle className="text-lg text-[#E3E3E3]">Price Chart</CardTitle>
-              <p className="text-sm text-[#9AA0A6]">Real-time price movements and momentum analysis</p>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="h-[400px] md:h-[500px] p-4">
-                <CoinChart priceHistory={priceHistory} coinName={coinInfo.name} />
+      {/* Stats Grid */}
+      <div className="border-b border-[hsl(210,15%,18%)] bg-[hsl(210,15%,6%)]">
+        <div className="container mx-auto px-4 py-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="terminal-card p-4">
+              <div className="text-xs text-[hsl(210,10%,55%)] uppercase tracking-wide mb-1">Price</div>
+              <div className="text-2xl font-bold font-mono text-[hsl(210,20%,90%)]">
+                ${currentPrice ? formatPrice(currentPrice) : "—"}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            <div className="terminal-card p-4">
+              <div className="text-xs text-[hsl(210,10%,55%)] uppercase tracking-wide mb-1">Session Change</div>
+              <div
+                className={`text-2xl font-bold font-mono flex items-center gap-2 ${sessionChange >= 0 ? "text-[hsl(145,80%,45%)]" : "text-[hsl(0,75%,55%)]"}`}
+              >
+                {sessionChange !== 0 &&
+                  (sessionChange > 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />)}
+                {startPrice ? formatPercentage(sessionChange) : "—"}
+              </div>
+            </div>
+
+            <div className="terminal-card p-4">
+              <div className="text-xs text-[hsl(210,10%,55%)] uppercase tracking-wide mb-1">
+                Momentum ({selectedTimeframe})
+              </div>
+              <div
+                className={`text-2xl font-bold font-mono ${momentum >= 0 ? "text-[hsl(145,80%,45%)]" : "text-[hsl(0,75%,55%)]"}`}
+              >
+                {formatPercentage(momentum)}
+              </div>
+            </div>
+
+            <div className="terminal-card p-4">
+              <div className="text-xs text-[hsl(210,10%,55%)] uppercase tracking-wide mb-1">Data Points</div>
+              <div className="text-2xl font-bold font-mono text-[hsl(210,20%,90%)]">{priceHistory.length}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <main className="flex-1 overflow-hidden">
+        <div className="container mx-auto px-4 py-4 h-full">
+          <div className="terminal-card h-full min-h-[300px] sm:min-h-[400px]">
+            <div className="p-4 border-b border-[hsl(210,15%,18%)]">
+              <h2 className="text-lg font-semibold text-[hsl(210,20%,90%)]">Price Chart</h2>
+              <p className="text-xs text-[hsl(210,10%,55%)]">Real-time price from Coinbase</p>
+            </div>
+            <div className="p-4 h-[calc(100%-80px)]">
+              <CoinChart priceHistory={priceHistory} coinName={coinInfo.name} />
+            </div>
+          </div>
         </div>
       </main>
     </div>

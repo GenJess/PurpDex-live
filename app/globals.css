@@ -2,54 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Terminal-style dark theme inspired by the reference image */
+/* Updated color palette to match terminal reference image - black bg, cyan/blue accents, avoiding red/green for UI elements */
 @layer base {
   :root {
-    /* Terminal dark theme - black background with green/cyan accents */
+    /* Terminal dark theme - pure black background with cyan/blue accents */
     --background: 0 0% 0%;
-    --foreground: 120 10% 85%;
+    --foreground: 210 20% 90%;
 
-    --card: 0 0% 4%;
-    --card-foreground: 120 10% 85%;
+    --card: 210 15% 6%;
+    --card-foreground: 210 20% 90%;
 
-    --popover: 0 0% 6%;
-    --popover-foreground: 120 10% 85%;
+    --popover: 210 15% 8%;
+    --popover-foreground: 210 20% 90%;
 
-    --primary: 160 100% 40%;
+    /* Primary is now cyan-blue instead of green */
+    --primary: 185 100% 50%;
     --primary-foreground: 0 0% 0%;
 
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 120 10% 85%;
+    --secondary: 210 15% 12%;
+    --secondary-foreground: 210 20% 90%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 55%;
+    --muted: 210 15% 15%;
+    --muted-foreground: 210 10% 55%;
 
-    --accent: 180 100% 40%;
+    /* Accent is now blue instead of cyan */
+    --accent: 210 100% 60%;
     --accent-foreground: 0 0% 0%;
 
-    --destructive: 0 70% 50%;
+    /* Using orange for destructive/warning instead of red */
+    --destructive: 25 100% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 12%;
-    --ring: 160 100% 40%;
+    --border: 210 15% 18%;
+    --input: 210 15% 10%;
+    --ring: 185 100% 50%;
 
-    --success: 120 60% 45%;
-    --warning: 45 100% 50%;
-    --danger: 0 70% 50%;
-    --info: 180 100% 45%;
+    /* Performance colors only - these are reserved for gains/losses */
+    --gain: 145 80% 45%;
+    --loss: 0 75% 55%;
 
-    --radius: 0.375rem;
+    /* UI status colors - not red/green */
+    --status-info: 185 100% 50%;
+    --status-warning: 40 100% 55%;
+    --status-active: 210 100% 60%;
+
+    --radius: 0.25rem;
 
     /* Terminal-specific variables */
     --bg: hsl(0 0% 0%);
-    --surface: hsl(0 0% 4%);
-    --surface-2: hsl(0 0% 8%);
-    --surface-hover: hsl(0 0% 12%);
-    --text: hsl(120 10% 85%);
-    --text-muted: hsl(0 0% 55%);
-    --primary-color: hsl(160 100% 40%);
-    --primary-hover: hsl(160 100% 35%);
+    --surface: hsl(210 15% 6%);
+    --surface-2: hsl(210 15% 10%);
+    --surface-hover: hsl(210 15% 14%);
+    --text: hsl(210 20% 90%);
+    --text-muted: hsl(210 10% 55%);
+    --text-dim: hsl(210 10% 40%);
+    --primary-color: hsl(185 100% 50%);
+    --primary-hover: hsl(185 100% 45%);
+    --accent-color: hsl(210 100% 60%);
   }
 }
 
@@ -67,6 +76,14 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Performance color utilities */
+  .text-gain {
+    color: hsl(var(--gain));
+  }
+  .text-loss {
+    color: hsl(var(--loss));
+  }
 }
 
 /* Terminal-style scrollbar */
@@ -76,42 +93,46 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(0 0% 4%);
+  background: hsl(210 15% 4%);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(0 0% 25%);
+  background: hsl(210 15% 22%);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(0 0% 35%);
+  background: hsl(210 15% 30%);
 }
 
 /* Terminal card styling */
 .terminal-card {
-  background: hsl(0 0% 4%);
-  border: 1px solid hsl(0 0% 20%);
-  border-radius: 0.375rem;
+  background: hsl(210 15% 6%);
+  border: 1px solid hsl(210 15% 18%);
+  border-radius: 0.25rem;
 }
 
 .terminal-card-highlight {
-  background: hsl(0 0% 4%);
-  border: 1px solid hsl(160 100% 40% / 0.3);
-  box-shadow: 0 0 10px hsl(160 100% 40% / 0.1);
+  background: hsl(210 15% 6%);
+  border: 1px solid hsl(185 100% 50% / 0.3);
+  box-shadow: 0 0 12px hsl(185 100% 50% / 0.08);
 }
 
-/* Responsive mobile styles */
+/* Mobile-first responsive utilities */
 @media (max-width: 640px) {
   .mobile-stack {
     flex-direction: column;
   }
-
   .mobile-full {
     width: 100%;
   }
-
   .mobile-text-sm {
     font-size: 0.875rem;
+  }
+  .mobile-p-2 {
+    padding: 0.5rem;
+  }
+  .mobile-gap-2 {
+    gap: 0.5rem;
   }
 }

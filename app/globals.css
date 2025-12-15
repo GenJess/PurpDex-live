@@ -2,31 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Terminal-style dark theme inspired by the reference image */
 @layer base {
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 6%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 6%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-    --success: 142.1 76.2% 36.3%;
-    --warning: 38 92% 50%;
-    --info: 199 89% 48%;
-    --radius: 0.5rem;
+    /* Terminal dark theme - black background with green/cyan accents */
+    --background: 0 0% 0%;
+    --foreground: 120 10% 85%;
+
+    --card: 0 0% 4%;
+    --card-foreground: 120 10% 85%;
+
+    --popover: 0 0% 6%;
+    --popover-foreground: 120 10% 85%;
+
+    --primary: 160 100% 40%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 120 10% 85%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 55%;
+
+    --accent: 180 100% 40%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 12%;
+    --ring: 160 100% 40%;
+
+    --success: 120 60% 45%;
+    --warning: 45 100% 50%;
+    --danger: 0 70% 50%;
+    --info: 180 100% 45%;
+
+    --radius: 0.375rem;
+
+    /* Terminal-specific variables */
+    --bg: hsl(0 0% 0%);
+    --surface: hsl(0 0% 4%);
+    --surface-2: hsl(0 0% 8%);
+    --surface-hover: hsl(0 0% 12%);
+    --text: hsl(120 10% 85%);
+    --text-muted: hsl(0 0% 55%);
+    --primary-color: hsl(160 100% 40%);
+    --primary-hover: hsl(160 100% 35%);
   }
 }
 
@@ -35,7 +58,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -43,5 +66,52 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* Terminal-style scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(0 0% 4%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(0 0% 25%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(0 0% 35%);
+}
+
+/* Terminal card styling */
+.terminal-card {
+  background: hsl(0 0% 4%);
+  border: 1px solid hsl(0 0% 20%);
+  border-radius: 0.375rem;
+}
+
+.terminal-card-highlight {
+  background: hsl(0 0% 4%);
+  border: 1px solid hsl(160 100% 40% / 0.3);
+  box-shadow: 0 0 10px hsl(160 100% 40% / 0.1);
+}
+
+/* Responsive mobile styles */
+@media (max-width: 640px) {
+  .mobile-stack {
+    flex-direction: column;
+  }
+
+  .mobile-full {
+    width: 100%;
+  }
+
+  .mobile-text-sm {
+    font-size: 0.875rem;
   }
 }

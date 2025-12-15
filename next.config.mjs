@@ -9,6 +9,17 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  webpack: (config, { isServer }) => {
+    // Disable caching to avoid ENOSPC errors
+    config.cache = false
+    return config
+  },
+  experimental: {
+    // Reduce build output size
+    outputFileTracingIncludes: {
+      '/': ['./public/**/*'],
+    },
+  },
 }
 
 export default nextConfig

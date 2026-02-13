@@ -1,24 +1,22 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useCoinbase, type ConnectionStatus } from "@/hooks/use-coinbase"
 import { useCoinbaseProducts, type CoinbaseProduct } from "@/hooks/use-coinbase-products"
-import { TrendingUp, Search, Plus, X, RotateCcw, Flag, Pause, Activity, Wifi, WifiOff } from "lucide-react"
+import {
+  Search, Plus, X, RotateCcw, Flag, Pause, Activity, Wifi, WifiOff,
+  TrendingUp, ChevronUp, ChevronDown, Minus,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 import {
-  calculateMomentum,
-  getTimeframeMs,
-  getOptimalBufferSize,
-  type MomentumTimeframe,
-  type PricePoint,
+  calculateMomentum, getTimeframeMs, getOptimalBufferSize,
+  type MomentumTimeframe, type PricePoint,
 } from "@/lib/momentum-calculator"
 
-// Types
+// ------- Types -------
 interface CoinData {
   id: string
   symbol: string
@@ -31,145 +29,151 @@ interface CoinData {
   momentum: number
   lastUpdated: number
   priceHistory: PricePoint[]
+  prevRank: number
+  rankDelta: number
+  rankFlash: "up" | "down" | null
 }
 
 type SortField = "sessionROC" | "momentum" | "currentPrice"
 
-const COIN_COLORS = [
-  "#00d4ff", // Cyan
-  "#3b82f6", // Blue
-  "#f59e0b", // Amber
-  "#a855f7", // Purple
-  "#ec4899", // Pink
-  "#06b6d4", // Teal
-  "#8b5cf6", // Violet
-  "#f97316", // Orange
-]
+const COIN_COLORS: Record<string, string> = {
+  BTC: "#F7931A", ETH: "#627EEA", SOL: "#9945FF", DOGE: "#C2A633",
+  ADA: "#0033AD", AVAX: "#E84142", LINK: "#2A5ADA", UNI: "#FF007A",
+  DOT: "#E6007A", MATIC: "#8247E5", SHIB: "#FFA409", XRP: "#00AAE4",
+  LTC: "#BFBBBB", ATOM: "#2E3148", NEAR: "#00C1DE", APT: "#00BFA5",
+}
+const DEFAULT_COLOR = "#00E5A0"
+const getCoinColor = (symbol: string) => COIN_COLORS[symbol] || DEFAULT_COLOR
 
 const OPTIMAL_BUFFER_SIZE = getOptimalBufferSize()
 
-// Brand logo
-function Brand() {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded bg-[hsl(185,100%,50%)] flex items-center justify-center text-black font-bold text-xs sm:text-sm font-mono">
-        PD
+// ------- Coin Logo (real images from CoinGecko CDN) -------
+const LOGO_SLUGS: Record<string, string> = {
+  BTC: "bitcoin", ETH: "ethereum", SOL: "solana", DOGE: "dogecoin",
+  ADA: "cardano", AVAX: "avalanche-2", LINK: "chainlink", UNI: "uniswap",
+  DOT: "polkadot", MATIC: "matic-network", SHIB: "shiba-inu", XRP: "ripple",
+  LTC: "litecoin", ATOM: "cosmos", NEAR: "near", APT: "aptos",
+  ARB: "arbitrum", OP: "optimism", FIL: "filecoin", AAVE: "aave",
+  MKR: "maker", CRV: "curve-dao-token", LDO: "lido-dao", RENDER: "render-token",
+  FET: "fetch-ai", GRT: "the-graph", INJ: "injective-protocol", SUI: "sui",
+  PEPE: "pepe", WIF: "dogwifcoin", BONK: "bonk",
+}
+
+function CoinLogo({ symbol, size = 32 }: { symbol: string; size?: number }) {
+  const [failed, setFailed] = useState(false)
+  const slug = LOGO_SLUGS[symbol]
+  const src = slug ? `https://assets.coingecko.com/coins/images/${slug}/small/${slug}.png` : null
+
+  // Use the simpler thumb API that works without slug mapping
+  const fallbackSrc = `https://assets.coingecko.com/coins/images/1/thumb/${symbol.toLowerCase()}.png`
+
+  if (!src || failed) {
+    return (
+      <div
+        className="rounded-full flex items-center justify-center text-black font-bold font-mono flex-shrink-0"
+        style={{ width: size, height: size, backgroundColor: getCoinColor(symbol), fontSize: size * 0.35 }}
+      >
+        {symbol.slice(0, 2)}
       </div>
-      <div className="leading-tight hidden sm:block">
-        <div className="text-sm font-semibold text-[hsl(210,20%,90%)] font-mono">PurpDex</div>
-        <div className="text-xs text-[hsl(210,10%,55%)]">Live Tracker</div>
-      </div>
-    </div>
-  )
-}
-
-function ConnectionIndicator({ status, error }: { status: ConnectionStatus; error: string | null }) {
-  return (
-    <div className="flex items-center gap-2">
-      {status === "connected" ? (
-        <Wifi className="w-4 h-4 text-[hsl(185,100%,50%)]" />
-      ) : status === "connecting" ? (
-        <Wifi className="w-4 h-4 text-[hsl(40,100%,55%)] animate-pulse" />
-      ) : (
-        <WifiOff className="w-4 h-4 text-[hsl(210,10%,55%)]" />
-      )}
-      <span className="text-xs text-[hsl(210,10%,55%)] hidden sm:inline font-mono">
-        {status === "connected"
-          ? "LIVE"
-          : status === "connecting"
-            ? "CONNECTING"
-            : status === "error"
-              ? "ERROR"
-              : "OFFLINE"}
-      </span>
-      {error && (
-        <span className="text-xs text-[hsl(25,100%,50%)] hidden md:inline truncate max-w-32" title={error}>
-          {error}
-        </span>
-      )}
-    </div>
-  )
-}
-
-// Utilities
-const generateCoinId = (symbol: string) => `${symbol}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-
-const calculateSessionROC = (currentPrice: number, sessionStartPrice: number): number => {
-  if (!sessionStartPrice || sessionStartPrice === 0) return 0
-  return ((currentPrice - sessionStartPrice) / sessionStartPrice) * 100
-}
-
-const formatPrice = (price: number): string => {
-  if (!price || !Number.isFinite(price)) return "—"
-  if (price < 0.001) return price.toFixed(8)
-  if (price < 1) return price.toFixed(4)
-  if (price < 100) return price.toFixed(2)
-  return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-const formatPercentage = (pct: number): string => {
-  if (!Number.isFinite(pct)) return "—"
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`
-}
-
-const formatElapsedTime = (ms: number): string => {
-  const totalSeconds = Math.floor(ms / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+    )
   }
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`
-}
-
-// Momentum Timeframe Selector
-function MomentumTimeframeSelector({
-  timeframe,
-  onTimeframeChange,
-}: {
-  timeframe: MomentumTimeframe
-  onTimeframeChange: (tf: MomentumTimeframe) => void
-}) {
-  const timeframes: MomentumTimeframe[] = ["30s", "1m", "2m", "5m"]
 
   return (
-    <div className="flex items-center gap-0.5 bg-[hsl(210,15%,8%)] rounded p-0.5 border border-[hsl(210,15%,18%)]">
-      {timeframes.map((tf) => (
+    <img
+      src={`https://cdn.jsdelivr.net/gh/nicehash/Cryptocurrency-Images/main/${symbol.toLowerCase()}.png`}
+      alt={symbol}
+      width={size}
+      height={size}
+      className="rounded-full flex-shrink-0"
+      crossOrigin="anonymous"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+// ------- Utilities -------
+const genId = (sym: string) => `${sym}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+
+const sessionROC = (cur: number, start: number) =>
+  !start || start === 0 ? 0 : ((cur - start) / start) * 100
+
+const fmtPrice = (p: number) => {
+  if (!p || !Number.isFinite(p)) return "..."
+  if (p < 0.001) return p.toFixed(6)
+  if (p < 1) return p.toFixed(4)
+  if (p < 100) return p.toFixed(2)
+  return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const fmtPct = (v: number) => {
+  if (!Number.isFinite(v)) return "..."
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`
+}
+
+const fmtTime = (ms: number) => {
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+    : `${m}:${String(sec).padStart(2, "0")}`
+}
+
+// ------- Sub-components -------
+
+function LiveBadge({ status }: { status: ConnectionStatus }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {status === "connected" ? (
+        <>
+          <span className="live-dot w-1.5 h-1.5 rounded-full bg-[hsl(var(--gain))]" />
+          <span className="text-[10px] tracking-widest uppercase text-[hsl(var(--gain))] font-mono">Live</span>
+        </>
+      ) : status === "connecting" ? (
+        <>
+          <Wifi className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+          <span className="text-[10px] text-amber-400 font-mono">Connecting</span>
+        </>
+      ) : (
+        <>
+          <WifiOff className="w-3.5 h-3.5 text-[hsl(220,10%,40%)]" />
+          <span className="text-[10px] text-[hsl(220,10%,40%)] font-mono">Offline</span>
+        </>
+      )}
+    </div>
+  )
+}
+
+function TimeframeToggle({ value, onChange }: { value: MomentumTimeframe; onChange: (t: MomentumTimeframe) => void }) {
+  const tfs: MomentumTimeframe[] = ["30s", "1m", "2m", "5m"]
+  return (
+    <div className="flex items-center gap-0.5 bg-[hsl(220,14%,7%)] rounded-lg p-0.5 border border-[hsl(220,14%,12%)]">
+      {tfs.map((t) => (
         <button
-          key={tf}
-          onClick={() => onTimeframeChange(tf)}
-          className={`px-2 py-1 rounded text-xs transition-all font-mono ${
-            timeframe === tf
-              ? "bg-[hsl(185,100%,50%)] text-black"
-              : "text-[hsl(210,10%,55%)] hover:text-[hsl(210,20%,90%)] hover:bg-[hsl(210,15%,12%)]"
+          key={t}
+          onClick={() => onChange(t)}
+          className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all press-scale ${
+            value === t
+              ? "bg-[hsl(var(--primary))] text-black font-semibold shadow-sm"
+              : "text-[hsl(220,10%,50%)] hover:text-[hsl(220,15%,80%)]"
           }`}
         >
-          {tf}
+          {t}
         </button>
       ))}
     </div>
   )
 }
 
-function AddCoinTypeahead({
-  value,
-  onValueChange,
-  existingSymbols,
-  onSelectCoin,
-  onAddFirstMatch,
+function Typeahead({
+  value, onChange, existing, onSelect,
 }: {
-  value: string
-  onValueChange: (v: string) => void
-  existingSymbols: string[]
-  onSelectCoin: (product: CoinbaseProduct) => void
-  onAddFirstMatch: () => void
+  value: string; onChange: (v: string) => void; existing: string[]; onSelect: (p: CoinbaseProduct) => void
 }) {
   const [open, setOpen] = useState(false)
   const { products, loading } = useCoinbaseProducts()
-  const inputRef = useRef<HTMLInputElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase()
@@ -177,137 +181,194 @@ function AddCoinTypeahead({
     return products
       .filter(
         (p) =>
-          !existingSymbols.includes(p.product_id) &&
-          (p.base_currency.toLowerCase().includes(q) ||
-            p.base_name.toLowerCase().includes(q) ||
-            p.product_id.toLowerCase().includes(q)),
+          !existing.includes(p.product_id) &&
+          (p.base_currency.toLowerCase().includes(q) || p.base_name.toLowerCase().includes(q)),
       )
       .slice(0, 8)
-  }, [products, value, existingSymbols])
+  }, [products, value, existing])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
   }, [])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && filtered.length > 0) {
-      e.preventDefault()
-      onSelectCoin(filtered[0])
-      onValueChange("")
-      setOpen(false)
-    } else if (e.key === "Escape") {
-      setOpen(false)
-    }
-  }
+  const pick = (p: CoinbaseProduct) => { onSelect(p); onChange(""); setOpen(false) }
 
   return (
-    <div ref={containerRef} className="relative flex-1 min-w-0">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(210,10%,45%)] pointer-events-none z-10" />
-        <Input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => {
-            onValueChange(e.target.value)
-            setOpen(e.target.value.length > 0)
-          }}
-          onFocus={() => value.length > 0 && setOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search coins (BTC, ETH...)"
-          className="pl-10 pr-3 h-9 bg-[hsl(210,15%,8%)] border-[hsl(210,15%,18%)] text-[hsl(210,20%,90%)] placeholder:text-[hsl(210,10%,40%)] font-mono text-sm focus:border-[hsl(185,100%,50%)] focus:ring-1 focus:ring-[hsl(185,100%,50%)]"
-        />
-      </div>
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[hsl(220,10%,35%)] pointer-events-none z-10" />
+      <Input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(e.target.value.length > 0) }}
+        onFocus={() => value.length > 0 && setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && filtered.length > 0) { e.preventDefault(); pick(filtered[0]) }
+          if (e.key === "Escape") setOpen(false)
+        }}
+        placeholder="Search coins..."
+        className="pl-9 pr-3 h-9 bg-[hsl(220,14%,7%)] border-[hsl(220,14%,12%)] text-[hsl(220,15%,88%)] placeholder:text-[hsl(220,10%,30%)] font-mono text-sm rounded-lg focus:border-[hsl(var(--primary))] focus:ring-1 focus:ring-[hsl(var(--primary))]"
+      />
 
       {open && filtered.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[hsl(210,15%,8%)] border border-[hsl(210,15%,18%)] rounded shadow-xl z-50 max-h-64 overflow-y-auto">
-          {filtered.map((product) => (
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-[hsl(220,16%,8%)] border border-[hsl(220,14%,14%)] rounded-lg shadow-2xl z-50 max-h-72 overflow-y-auto animate-fade-in">
+          {filtered.map((p) => (
             <button
-              key={product.product_id}
-              onClick={() => {
-                onSelectCoin(product)
-                onValueChange("")
-                setOpen(false)
-              }}
-              className="w-full px-3 py-2 text-left hover:bg-[hsl(210,15%,14%)] flex items-center gap-3 transition-colors"
+              key={p.product_id}
+              onClick={() => pick(p)}
+              className="w-full px-3 py-2.5 text-left hover:bg-[hsl(220,14%,12%)] flex items-center gap-3 transition-colors press-scale"
             >
-              <div className="w-8 h-8 rounded bg-[hsl(185,100%,50%)] flex items-center justify-center text-black text-xs font-bold font-mono flex-shrink-0">
-                {product.base_currency.slice(0, 2)}
-              </div>
+              <CoinLogo symbol={p.base_currency} size={28} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-[hsl(210,20%,90%)] truncate">{product.base_name}</div>
-                <div className="text-xs text-[hsl(210,10%,55%)] font-mono">{product.product_id}</div>
+                <div className="text-sm font-medium text-[hsl(220,15%,88%)]">{p.base_currency}</div>
+                <div className="text-[11px] text-[hsl(220,10%,45%)]">{p.base_name}</div>
               </div>
+              <Plus className="w-3.5 h-3.5 text-[hsl(220,10%,35%)]" />
             </button>
           ))}
         </div>
       )}
 
       {open && value.length > 0 && filtered.length === 0 && !loading && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[hsl(210,15%,8%)] border border-[hsl(210,15%,18%)] rounded shadow-xl z-50 p-3">
-          <p className="text-sm text-[hsl(210,10%,55%)]">No matching coins found</p>
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-[hsl(220,16%,8%)] border border-[hsl(220,14%,14%)] rounded-lg shadow-2xl z-50 p-4 text-center animate-fade-in">
+          <p className="text-sm text-[hsl(220,10%,45%)]">No results</p>
         </div>
       )}
     </div>
   )
 }
 
-function StatCard({
-  label,
-  value,
-  subValue,
-  icon: Icon,
-}: { label: string; value: string; subValue?: string; icon: any }) {
-  const isPositive = subValue?.startsWith("+")
-  const isNegative = subValue?.startsWith("-")
+// ------- Position delta badge -------
+function PosDelta({ delta }: { delta: number }) {
+  if (delta === 0) return <Minus className="w-3 h-3 text-[hsl(220,10%,30%)]" />
+  const up = delta > 0
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[10px] font-mono font-semibold ${up ? "text-gain" : "text-loss"}`}>
+      {up ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      {Math.abs(delta)}
+    </span>
+  )
+}
+
+// ------- Ranking chart (canvas) -------
+function RankingChart({ history, coins }: { history: Map<string, number[]>; coins: CoinData[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const container = containerRef.current
+    if (!canvas || !container) return
+
+    const rect = container.getBoundingClientRect()
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = rect.width * dpr
+    canvas.height = rect.height * dpr
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, rect.width, rect.height)
+
+    const pad = { top: 24, right: 70, bottom: 24, left: 16 }
+    const w = rect.width - pad.left - pad.right
+    const h = rect.height - pad.top - pad.bottom
+
+    if (coins.length === 0) return
+
+    // Zero line
+    const maxRank = coins.length
+    const yForRank = (rank: number) => pad.top + ((rank - 1) / Math.max(maxRank - 1, 1)) * h
+
+    // Grid
+    ctx.strokeStyle = "hsl(220, 14%, 10%)"
+    ctx.lineWidth = 1
+    ctx.setLineDash([2, 4])
+    for (let i = 0; i < maxRank; i++) {
+      const y = yForRank(i + 1)
+      ctx.beginPath()
+      ctx.moveTo(pad.left, y)
+      ctx.lineTo(pad.left + w, y)
+      ctx.stroke()
+    }
+    ctx.setLineDash([])
+
+    // Draw lines for each coin
+    coins.forEach((coin) => {
+      const ranks = history.get(coin.id) || []
+      if (ranks.length < 2) return
+
+      const color = getCoinColor(coin.symbol)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2.5
+      ctx.lineJoin = "round"
+      ctx.lineCap = "round"
+      ctx.globalAlpha = 0.85
+
+      ctx.beginPath()
+      ranks.forEach((rank, i) => {
+        const x = pad.left + (i / Math.max(ranks.length - 1, 1)) * w
+        const y = yForRank(rank)
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      })
+      ctx.stroke()
+
+      // End dot + label
+      const lastRank = ranks[ranks.length - 1]
+      const endX = pad.left + w
+      const endY = yForRank(lastRank)
+
+      ctx.globalAlpha = 1
+      ctx.beginPath()
+      ctx.arc(endX, endY, 4, 0, 2 * Math.PI)
+      ctx.fillStyle = color
+      ctx.fill()
+
+      ctx.fillStyle = color
+      ctx.font = "bold 11px monospace"
+      ctx.textAlign = "left"
+      ctx.textBaseline = "middle"
+      ctx.fillText(coin.symbol, endX + 10, endY)
+    })
+    ctx.globalAlpha = 1
+  }, [history, coins])
 
   return (
-    <div className="terminal-card p-3 sm:p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="w-4 h-4 text-[hsl(185,100%,50%)]" />
-        <span className="text-xs text-[hsl(210,10%,55%)] uppercase tracking-wide">{label}</span>
-      </div>
-      <div className="text-xl sm:text-2xl font-bold text-[hsl(210,20%,90%)] font-mono">{value}</div>
-      {subValue && (
-        <div
-          className={`text-xs sm:text-sm font-mono mt-1 ${isPositive ? "text-gain" : isNegative ? "text-loss" : "text-[hsl(210,10%,55%)]"}`}
-        >
-          {subValue}
-        </div>
-      )}
+    <div ref={containerRef} className="w-full h-full min-h-[200px]">
+      <canvas ref={canvasRef} className="w-full h-full" style={{ width: "100%", height: "100%" }} />
     </div>
   )
 }
 
-// Main Component
+// ======= MAIN =======
 export default function MomentumTracker() {
   const router = useRouter()
 
-  // State
   const [watchlist, setWatchlist] = useState<CoinData[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [raceActive, setRaceActive] = useState(false)
   const [racePaused, setRacePaused] = useState(false)
   const [raceStartTime, setRaceStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
-  const [momentumTimeframe, setMomentumTimeframe] = useState<MomentumTimeframe>("1m")
+  const [momentumTf, setMomentumTf] = useState<MomentumTimeframe>("1m")
   const [sortField, setSortField] = useState<SortField>("sessionROC")
   const [activeTab, setActiveTab] = useState<"table" | "chart">("table")
 
-  // Get product IDs for WebSocket subscription
+  // Ranking history for chart
+  const [rankHistory, setRankHistory] = useState<Map<string, number[]>>(new Map())
+
   const productIds = useMemo(() => watchlist.map((c) => c.coinbaseId), [watchlist])
   const { book, status, error } = useCoinbase(productIds)
   const { products } = useCoinbaseProducts()
 
-  // Update coins from WebSocket data
-  const updateCoinsRef = useRef<() => void>()
-  updateCoinsRef.current = () => {
+  // Previous ranks ref for detecting changes
+  const prevRanksRef = useRef<Map<string, number>>(new Map())
+
+  // Update coins from WS
+  const updateRef = useRef<() => void>()
+  updateRef.current = () => {
     if (Object.keys(book).length === 0) return
 
     setWatchlist((prev) => {
@@ -320,128 +381,107 @@ export default function MomentumTracker() {
         if (latest.price === coin.currentPrice && latest.ts === coin.lastUpdated) return coin
 
         changed = true
-        const history: PricePoint[] = series.slice(-OPTIMAL_BUFFER_SIZE).map((p) => ({
-          price: p.price,
-          timestamp: p.ts,
-        }))
+        const history: PricePoint[] = series.slice(-OPTIMAL_BUFFER_SIZE).map((p) => ({ price: p.price, timestamp: p.ts }))
+        const sROC = raceActive && coin.sessionStartPrice > 0 ? sessionROC(latest.price, coin.sessionStartPrice) : 0
+        const mom = calculateMomentum(history, getTimeframeMs(momentumTf))
 
-        const sessionROC =
-          raceActive && coin.sessionStartPrice > 0 ? calculateSessionROC(latest.price, coin.sessionStartPrice) : 0
+        return { ...coin, currentPrice: latest.price, priceHistory: history, sessionROC: sROC, momentum: mom, lastUpdated: latest.ts }
+      })
+      if (!changed) return prev
 
-        const timeframeMs = getTimeframeMs(momentumTimeframe)
-        const momentum = calculateMomentum(history, timeframeMs)
-
-        return {
-          ...coin,
-          currentPrice: latest.price,
-          priceHistory: history,
-          sessionROC,
-          momentum,
-          lastUpdated: latest.ts,
-        }
+      // Compute ranks + deltas
+      const sorted = [...updated].sort((a, b) => {
+        if (sortField === "sessionROC") return b.sessionROC - a.sessionROC
+        if (sortField === "momentum") return b.momentum - a.momentum
+        return b.currentPrice - a.currentPrice
       })
 
-      return changed ? updated : prev
+      const newRanks = new Map<string, number>()
+      sorted.forEach((c, i) => newRanks.set(c.id, i + 1))
+
+      const withRanks = updated.map((c) => {
+        const newRank = newRanks.get(c.id) || 0
+        const oldRank = prevRanksRef.current.get(c.id) || newRank
+        const delta = oldRank - newRank // positive = moved up
+        const flash = delta > 0 ? "up" as const : delta < 0 ? "down" as const : null
+        return { ...c, prevRank: oldRank, rankDelta: delta, rankFlash: flash }
+      })
+
+      prevRanksRef.current = newRanks
+
+      // Append to ranking history
+      setRankHistory((prev) => {
+        const next = new Map(prev)
+        withRanks.forEach((c) => {
+          const rank = newRanks.get(c.id) || 0
+          const arr = next.get(c.id) || []
+          arr.push(rank)
+          if (arr.length > 120) arr.shift()
+          next.set(c.id, arr)
+        })
+        return next
+      })
+
+      return withRanks
     })
   }
 
-  // Throttled update effect
   useEffect(() => {
     if (Object.keys(book).length === 0) return
-
-    const interval = setInterval(() => {
-      updateCoinsRef.current?.()
-    }, 500)
-
-    // Initial update
-    updateCoinsRef.current?.()
-
-    return () => clearInterval(interval)
+    const iv = setInterval(() => updateRef.current?.(), 500)
+    updateRef.current?.()
+    return () => clearInterval(iv)
   }, [book])
 
-  // Elapsed time timer
   useEffect(() => {
     if (!raceActive || racePaused || !raceStartTime) return
-
-    const interval = setInterval(() => {
-      setElapsedTime(Date.now() - raceStartTime)
-    }, 1000)
-
-    return () => clearInterval(interval)
+    const iv = setInterval(() => setElapsedTime(Date.now() - raceStartTime), 1000)
+    return () => clearInterval(iv)
   }, [raceActive, racePaused, raceStartTime])
 
-  // Add coin to watchlist
-  const addCoin = useCallback((product: CoinbaseProduct) => {
+  // Actions
+  const addCoin = useCallback((p: CoinbaseProduct) => {
     setWatchlist((prev) => {
-      if (prev.some((c) => c.coinbaseId === product.product_id)) return prev
-
-      const newCoin: CoinData = {
-        id: generateCoinId(product.base_currency),
-        symbol: product.base_currency,
-        name: product.base_name,
-        coinbaseId: product.product_id,
-        currentPrice: 0,
-        sessionStartPrice: 0,
-        sessionStartTime: 0,
-        sessionROC: 0,
-        momentum: 0,
-        lastUpdated: 0,
-        priceHistory: [],
-      }
-
-      return [...prev, newCoin]
+      if (prev.some((c) => c.coinbaseId === p.product_id)) return prev
+      return [...prev, {
+        id: genId(p.base_currency), symbol: p.base_currency, name: p.base_name,
+        coinbaseId: p.product_id, currentPrice: 0, sessionStartPrice: 0, sessionStartTime: 0,
+        sessionROC: 0, momentum: 0, lastUpdated: 0, priceHistory: [],
+        prevRank: 0, rankDelta: 0, rankFlash: null,
+      }]
     })
   }, [])
 
-  // Remove coin from watchlist
   const removeCoin = useCallback((id: string) => {
     setWatchlist((prev) => prev.filter((c) => c.id !== id))
+    setRankHistory((prev) => { const n = new Map(prev); n.delete(id); return n })
   }, [])
 
-  // Start race
   const startRace = useCallback(() => {
     if (watchlist.length === 0) return
-
     const now = Date.now()
     setRaceStartTime(now)
     setRaceActive(true)
     setRacePaused(false)
     setElapsedTime(0)
-
-    setWatchlist((prev) =>
-      prev.map((coin) => ({
-        ...coin,
-        sessionStartPrice: coin.currentPrice || 0,
-        sessionStartTime: now,
-        sessionROC: 0,
-      })),
-    )
+    setRankHistory(new Map())
+    prevRanksRef.current = new Map()
+    setWatchlist((prev) => prev.map((c) => ({
+      ...c, sessionStartPrice: c.currentPrice || 0, sessionStartTime: now, sessionROC: 0, rankDelta: 0, rankFlash: null,
+    })))
   }, [watchlist.length])
 
-  // Pause/Resume race
-  const togglePause = useCallback(() => {
-    setRacePaused((p) => !p)
-  }, [])
+  const togglePause = useCallback(() => setRacePaused((p) => !p), [])
 
-  // Reset race
   const resetRace = useCallback(() => {
-    setRaceActive(false)
-    setRacePaused(false)
-    setRaceStartTime(null)
-    setElapsedTime(0)
-
-    setWatchlist((prev) =>
-      prev.map((coin) => ({
-        ...coin,
-        sessionStartPrice: 0,
-        sessionStartTime: 0,
-        sessionROC: 0,
-      })),
-    )
+    setRaceActive(false); setRacePaused(false); setRaceStartTime(null); setElapsedTime(0)
+    setRankHistory(new Map()); prevRanksRef.current = new Map()
+    setWatchlist((prev) => prev.map((c) => ({
+      ...c, sessionStartPrice: 0, sessionStartTime: 0, sessionROC: 0, rankDelta: 0, rankFlash: null,
+    })))
   }, [])
 
-  // Sorted watchlist
-  const sortedWatchlist = useMemo(() => {
+  const sorted = useMemo(() => {
     return [...watchlist].sort((a, b) => {
       if (sortField === "sessionROC") return b.sessionROC - a.sessionROC
       if (sortField === "momentum") return b.momentum - a.momentum
@@ -449,243 +489,214 @@ export default function MomentumTracker() {
     })
   }, [watchlist, sortField])
 
-  // Leaders
-  const leader = sortedWatchlist[0]
-  const fastestMover = [...watchlist].sort((a, b) => b.momentum - a.momentum)[0]
-
-  // Navigate to coin page
-  const goToCoin = (symbol: string) => {
-    router.push(`/coin/${symbol.toLowerCase()}`)
-  }
+  const leader = sorted[0]
+  const fastest = [...watchlist].sort((a, b) => b.momentum - a.momentum)[0]
+  const topGainerId = sorted[0]?.id
+  const topLoserId = sorted.length > 1 ? sorted[sorted.length - 1]?.id : null
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] flex flex-col">
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-[hsl(210,15%,18%)] bg-[var(--surface)]">
-        <div className="container mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
-          <Brand />
-          <ConnectionIndicator status={status} error={error} />
+    <div className="min-h-[100dvh] bg-[hsl(220,16%,4%)] text-[hsl(220,15%,88%)] flex flex-col">
+      {/* ---- HEADER ---- */}
+      <header className="flex-shrink-0 border-b border-[hsl(220,14%,10%)] bg-[hsl(220,16%,5%)]">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-[hsl(var(--primary))] flex items-center justify-center text-black font-bold text-[11px] font-mono">PD</div>
+            <span className="text-sm font-semibold text-[hsl(220,15%,80%)] hidden sm:inline">PurpDex</span>
+          </div>
+          <LiveBadge status={status} />
         </div>
       </header>
 
-      {/* Stats Bar */}
-      <div className="border-b border-[hsl(210,15%,18%)] bg-[var(--surface)]">
-        <div className="container mx-auto px-3 sm:px-4 py-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-            <StatCard label="Watchlist" value={watchlist.length.toString()} icon={Activity} />
-            <StatCard label="Elapsed" value={raceActive ? formatElapsedTime(elapsedTime) : "0:00"} icon={Activity} />
-            <StatCard
-              label="Leader"
-              value={leader?.symbol || "—"}
-              subValue={leader && raceActive ? formatPercentage(leader.sessionROC) : undefined}
-              icon={TrendingUp}
-            />
-            <StatCard
-              label="Fastest"
-              value={fastestMover?.symbol || "—"}
-              subValue={fastestMover ? `${formatPercentage(fastestMover.momentum)}/${momentumTimeframe}` : undefined}
-              icon={Activity}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="border-b border-[hsl(210,15%,18%)] bg-[var(--surface)]">
-        <div className="container mx-auto px-3 sm:px-4 py-3">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* View Toggle & Timeframe */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-0.5 bg-[hsl(210,15%,8%)] rounded p-0.5 border border-[hsl(210,15%,18%)]">
-                <button
-                  onClick={() => setActiveTab("table")}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
-                    activeTab === "table"
-                      ? "bg-[hsl(185,100%,50%)] text-black"
-                      : "text-[hsl(210,10%,55%)] hover:text-[hsl(210,20%,90%)]"
-                  }`}
-                >
-                  Table
-                </button>
-                <button
-                  onClick={() => setActiveTab("chart")}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
-                    activeTab === "chart"
-                      ? "bg-[hsl(185,100%,50%)] text-black"
-                      : "text-[hsl(210,10%,55%)] hover:text-[hsl(210,20%,90%)]"
-                  }`}
-                >
-                  Chart
-                </button>
+      {/* ---- STAT CARDS ---- */}
+      <section className="border-b border-[hsl(220,14%,10%)] bg-[hsl(220,16%,5%)]">
+        <div className="max-w-5xl mx-auto px-4 py-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Watchlist", val: String(watchlist.length) },
+              { label: "Elapsed", val: raceActive ? fmtTime(elapsedTime) : "0:00" },
+              { label: "Leader", val: leader?.symbol || "...", sub: leader && raceActive ? fmtPct(leader.sessionROC) : undefined },
+              { label: "Fastest", val: fastest?.symbol || "...", sub: fastest ? `${fmtPct(fastest.momentum)}/${momentumTf}` : undefined },
+            ].map((s) => (
+              <div key={s.label} className="card-surface p-3">
+                <div className="text-[10px] uppercase tracking-wider text-[hsl(220,10%,40%)] mb-1">{s.label}</div>
+                <div className="text-lg font-bold font-mono text-[hsl(220,15%,90%)] leading-none">{s.val}</div>
+                {s.sub && (
+                  <div className={`text-xs font-mono mt-1 ${s.sub.startsWith("+") ? "text-gain" : s.sub.startsWith("-") ? "text-loss" : "text-[hsl(220,10%,45%)]"}`}>
+                    {s.sub}
+                  </div>
+                )}
               </div>
-
-              <MomentumTimeframeSelector timeframe={momentumTimeframe} onTimeframeChange={setMomentumTimeframe} />
-            </div>
-
-            {/* Search & Add */}
-            <div className="flex items-center gap-2 flex-1">
-              <AddCoinTypeahead
-                value={searchQuery}
-                onValueChange={setSearchQuery}
-                existingSymbols={watchlist.map((c) => c.coinbaseId)}
-                onSelectCoin={addCoin}
-                onAddFirstMatch={() => {}}
-              />
-
-              <Button
-                onClick={addCoin.bind(null, {
-                  product_id: "",
-                  base_currency: "",
-                  quote_currency: "",
-                  base_name: "",
-                  status: "",
-                  trading_disabled: false,
-                })}
-                disabled={!searchQuery}
-                size="sm"
-                className="bg-[hsl(185,100%,50%)] hover:bg-[hsl(185,100%,45%)] text-black font-mono h-9 px-3"
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
-
-            {/* Race Controls */}
-            <div className="flex items-center gap-2">
-              {!raceActive ? (
-                <Button
-                  onClick={startRace}
-                  disabled={watchlist.length === 0}
-                  size="sm"
-                  className="bg-[hsl(185,100%,50%)] hover:bg-[hsl(185,100%,45%)] text-black font-mono h-9"
-                >
-                  <Flag className="w-4 h-4 mr-1" />
-                  Start
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    onClick={togglePause}
-                    size="sm"
-                    variant="outline"
-                    className="border-[hsl(210,15%,18%)] text-[hsl(210,20%,90%)] hover:bg-[hsl(210,15%,14%)] font-mono h-9 bg-transparent"
-                  >
-                    <Pause className="w-4 h-4 mr-1" />
-                    {racePaused ? "Resume" : "Pause"}
-                  </Button>
-                  <Button
-                    onClick={resetRace}
-                    size="sm"
-                    variant="outline"
-                    className="border-[hsl(210,15%,18%)] text-[hsl(210,20%,90%)] hover:bg-[hsl(210,15%,14%)] font-mono h-9 bg-transparent"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </Button>
-                </>
-              )}
-            </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden">
-        <div className="container mx-auto px-3 sm:px-4 py-4 h-full">
+      {/* ---- CONTROLS ---- */}
+      <section className="border-b border-[hsl(220,14%,10%)] bg-[hsl(220,16%,5%)]">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row gap-2.5">
+          <div className="flex items-center gap-2">
+            {/* Tab toggle */}
+            <div className="flex items-center gap-0.5 bg-[hsl(220,14%,7%)] rounded-lg p-0.5 border border-[hsl(220,14%,12%)]">
+              {(["table", "chart"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setActiveTab(t)}
+                  className={`px-3 py-1 rounded-md text-[11px] font-mono capitalize transition-all press-scale ${
+                    activeTab === t
+                      ? "bg-[hsl(var(--primary))] text-black font-semibold"
+                      : "text-[hsl(220,10%,50%)] hover:text-[hsl(220,15%,80%)]"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <TimeframeToggle value={momentumTf} onChange={setMomentumTf} />
+          </div>
+
+          {/* Search */}
+          <Typeahead
+            value={searchQuery}
+            onChange={setSearchQuery}
+            existing={watchlist.map((c) => c.coinbaseId)}
+            onSelect={addCoin}
+          />
+
+          {/* Race controls */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {!raceActive ? (
+              <Button
+                onClick={startRace}
+                disabled={watchlist.length === 0}
+                size="sm"
+                className="bg-[hsl(var(--primary))] hover:bg-[hsl(160,80%,42%)] text-black font-mono h-9 rounded-lg press-scale"
+              >
+                <Flag className="w-3.5 h-3.5 mr-1.5" /> Start
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={togglePause} size="sm" variant="outline"
+                  className="border-[hsl(220,14%,14%)] text-[hsl(220,15%,80%)] hover:bg-[hsl(220,14%,10%)] font-mono h-9 rounded-lg bg-transparent press-scale"
+                >
+                  <Pause className="w-3.5 h-3.5 mr-1" /> {racePaused ? "Go" : "Pause"}
+                </Button>
+                <Button
+                  onClick={resetRace} size="sm" variant="outline"
+                  className="border-[hsl(220,14%,14%)] text-[hsl(220,15%,80%)] hover:bg-[hsl(220,14%,10%)] font-mono h-9 w-9 p-0 rounded-lg bg-transparent press-scale"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ---- MAIN CONTENT ---- */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           {watchlist.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center">
-              <Activity className="w-12 h-12 text-[hsl(210,10%,30%)] mb-4" />
-              <h3 className="text-lg font-semibold text-[hsl(210,20%,90%)] mb-2">No Coins Added</h3>
-              <p className="text-sm text-[hsl(210,10%,55%)] max-w-sm">
-                Search for coins above to add them to your watchlist and start tracking momentum.
+            <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in">
+              <div className="w-14 h-14 rounded-2xl bg-[hsl(220,14%,8%)] border border-[hsl(220,14%,14%)] flex items-center justify-center mb-5">
+                <Activity className="w-6 h-6 text-[hsl(220,10%,30%)]" />
+              </div>
+              <h3 className="text-base font-semibold text-[hsl(220,15%,80%)] mb-1">Add coins to get started</h3>
+              <p className="text-sm text-[hsl(220,10%,40%)] max-w-xs">
+                Search above to add coins, then start a race to track momentum in real time.
               </p>
             </div>
           ) : activeTab === "table" ? (
-            <div className="terminal-card overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b border-[hsl(210,15%,18%)] hover:bg-transparent">
-                      <TableHead className="text-[hsl(210,10%,55%)] font-mono text-xs uppercase">Asset</TableHead>
-                      <TableHead className="text-[hsl(210,10%,55%)] font-mono text-xs uppercase text-right">
-                        Price
-                      </TableHead>
-                      <TableHead className="text-[hsl(210,10%,55%)] font-mono text-xs uppercase text-right">
-                        <button
-                          onClick={() => setSortField("sessionROC")}
-                          className={`hover:text-[hsl(185,100%,50%)] ${sortField === "sessionROC" ? "text-[hsl(185,100%,50%)]" : ""}`}
-                        >
-                          Change %
-                        </button>
-                      </TableHead>
-                      <TableHead className="text-[hsl(210,10%,55%)] font-mono text-xs uppercase text-right">
-                        <button
-                          onClick={() => setSortField("momentum")}
-                          className={`hover:text-[hsl(185,100%,50%)] ${sortField === "momentum" ? "text-[hsl(185,100%,50%)]" : ""}`}
-                        >
-                          ROC ({momentumTimeframe})
-                        </button>
-                      </TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedWatchlist.map((coin, index) => (
-                      <TableRow
-                        key={coin.id}
-                        onClick={() => goToCoin(coin.symbol)}
-                        className="border-b border-[hsl(210,15%,12%)] cursor-pointer hover:bg-[hsl(210,15%,8%)] transition-colors"
-                      >
-                        <TableCell className="py-3">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-8 h-8 rounded flex items-center justify-center text-black text-xs font-bold font-mono flex-shrink-0"
-                              style={{ backgroundColor: COIN_COLORS[index % COIN_COLORS.length] }}
-                            >
-                              {coin.symbol.slice(0, 2)}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-[hsl(210,20%,90%)]">{coin.symbol}</div>
-                              <div className="text-xs text-[hsl(210,10%,55%)]">{coin.name}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-[hsl(210,20%,90%)]">
-                          ${formatPrice(coin.currentPrice)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={`font-mono ${coin.sessionROC >= 0 ? "text-gain" : "text-loss"}`}>
-                            {raceActive ? formatPercentage(coin.sessionROC) : "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={`font-mono ${coin.momentum >= 0 ? "text-gain" : "text-loss"}`}>
-                            {formatPercentage(coin.momentum)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removeCoin(coin.id)
-                            }}
-                            className="h-8 w-8 p-0 text-[hsl(210,10%,45%)] hover:text-[hsl(25,100%,50%)] hover:bg-[hsl(210,15%,12%)]"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+            <div className="space-y-1.5 animate-fade-in">
+              {/* Column headers */}
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] sm:grid-cols-[1fr_100px_90px_90px_36px] items-center gap-2 px-3 py-1.5 text-[10px] uppercase tracking-wider text-[hsl(220,10%,35%)] font-mono">
+                <span>Asset</span>
+                <span className="text-right hidden sm:block">Price</span>
+                <button onClick={() => setSortField("sessionROC")} className={`text-right ${sortField === "sessionROC" ? "text-[hsl(var(--primary))]" : ""}`}>
+                  Change
+                </button>
+                <button onClick={() => setSortField("momentum")} className={`text-right ${sortField === "momentum" ? "text-[hsl(var(--primary))]" : ""}`}>
+                  ROC
+                </button>
+                <span />
               </div>
+
+              {sorted.map((coin, idx) => {
+                const isTop = coin.id === topGainerId && raceActive && sorted.length > 1
+                const isBottom = coin.id === topLoserId && raceActive && sorted.length > 2
+
+                return (
+                  <div
+                    key={coin.id}
+                    onClick={() => router.push(`/coin/${coin.symbol.toLowerCase()}`)}
+                    className={`
+                      rank-item card-surface grid grid-cols-[1fr_auto_auto_auto_auto] sm:grid-cols-[1fr_100px_90px_90px_36px]
+                      items-center gap-2 px-3 py-2.5 cursor-pointer
+                      hover:bg-[hsl(220,14%,9%)] transition-colors press-scale
+                      ${isTop ? "glow-gain" : isBottom ? "glow-loss" : ""}
+                      ${coin.rankFlash === "up" ? "flash-up" : coin.rankFlash === "down" ? "flash-down" : ""}
+                    `}
+                  >
+                    {/* Asset */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-[10px] font-mono text-[hsl(220,10%,30%)] w-4 text-right flex-shrink-0">
+                        {idx + 1}
+                      </span>
+                      <CoinLogo symbol={coin.symbol} size={30} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-sm text-[hsl(220,15%,90%)]">{coin.symbol}</span>
+                          {raceActive && <PosDelta delta={coin.rankDelta} />}
+                        </div>
+                        <div className="text-[11px] text-[hsl(220,10%,40%)] truncate">{coin.name}</div>
+                      </div>
+                    </div>
+
+                    {/* Price */}
+                    <div className="text-right font-mono text-sm text-[hsl(220,15%,80%)] hidden sm:block">
+                      ${fmtPrice(coin.currentPrice)}
+                    </div>
+
+                    {/* Change % */}
+                    <div className={`text-right font-mono text-sm font-medium ${raceActive ? (coin.sessionROC >= 0 ? "text-gain" : "text-loss") : "text-[hsl(220,10%,35%)]"}`}>
+                      {raceActive ? fmtPct(coin.sessionROC) : "..."}
+                    </div>
+
+                    {/* ROC */}
+                    <div className={`text-right font-mono text-sm ${coin.momentum >= 0 ? "text-gain" : "text-loss"}`}>
+                      {fmtPct(coin.momentum)}
+                    </div>
+
+                    {/* Remove */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeCoin(coin.id) }}
+                      className="w-7 h-7 flex items-center justify-center rounded-md text-[hsl(220,10%,30%)] hover:text-[hsl(0,72%,58%)] hover:bg-[hsl(0,72%,58%)/0.1] transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           ) : (
-            <div className="terminal-card p-4 h-full flex flex-col">
-              <div className="text-center py-12">
-                <Activity className="w-12 h-12 text-[hsl(210,10%,30%)] mx-auto mb-4" />
-                <p className="text-[hsl(210,10%,55%)]">Chart view coming soon</p>
-                <p className="text-xs text-[hsl(210,10%,40%)] mt-2">Real-time momentum visualization</p>
+            /* ---- CHART VIEW: Ranking over time ---- */
+            <div className="card-surface overflow-hidden animate-fade-in">
+              <div className="px-4 py-3 border-b border-[hsl(220,14%,10%)] flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-[hsl(220,15%,85%)]">Position Chart</h2>
+                  <p className="text-[11px] text-[hsl(220,10%,40%)]">Ranking changes over time ({`#1 = top`})</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {sorted.map((c) => (
+                    <div key={c.id} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getCoinColor(c.symbol) }} />
+                      <span className="text-[11px] font-mono text-[hsl(220,10%,55%)]">{c.symbol}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4 h-[320px] sm:h-[400px]">
+                <RankingChart history={rankHistory} coins={sorted} />
               </div>
             </div>
           )}

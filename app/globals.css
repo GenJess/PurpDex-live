@@ -2,70 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Updated color palette to match terminal reference image - black bg, cyan/blue accents, avoiding red/green for UI elements */
 @layer base {
   :root {
-    /* Terminal dark theme - pure black background with cyan/blue accents */
-    --background: 0 0% 0%;
-    --foreground: 210 20% 90%;
-
-    --card: 210 15% 6%;
-    --card-foreground: 210 20% 90%;
-
-    --popover: 210 15% 8%;
-    --popover-foreground: 210 20% 90%;
-
-    /* Primary is now cyan-blue instead of green */
-    --primary: 185 100% 50%;
+    --background: 220 16% 4%;
+    --foreground: 220 15% 88%;
+    --card: 220 16% 7%;
+    --card-foreground: 220 15% 88%;
+    --popover: 220 16% 8%;
+    --popover-foreground: 220 15% 88%;
+    --primary: 160 100% 50%;
     --primary-foreground: 0 0% 0%;
-
-    --secondary: 210 15% 12%;
-    --secondary-foreground: 210 20% 90%;
-
-    --muted: 210 15% 15%;
-    --muted-foreground: 210 10% 55%;
-
-    /* Accent is now blue instead of cyan */
-    --accent: 210 100% 60%;
+    --secondary: 220 14% 11%;
+    --secondary-foreground: 220 15% 88%;
+    --muted: 220 14% 14%;
+    --muted-foreground: 220 10% 50%;
+    --accent: 160 80% 42%;
     --accent-foreground: 0 0% 0%;
-
-    /* Using orange for destructive/warning instead of red */
-    --destructive: 25 100% 50%;
+    --destructive: 0 75% 55%;
     --destructive-foreground: 0 0% 100%;
-
-    --border: 210 15% 18%;
-    --input: 210 15% 10%;
-    --ring: 185 100% 50%;
-
-    /* Performance colors only - these are reserved for gains/losses */
-    --gain: 145 80% 45%;
-    --loss: 0 75% 55%;
-
-    /* UI status colors - not red/green */
-    --status-info: 185 100% 50%;
-    --status-warning: 40 100% 55%;
-    --status-active: 210 100% 60%;
-
-    --radius: 0.25rem;
-
-    /* Terminal-specific variables */
-    --bg: hsl(0 0% 0%);
-    --surface: hsl(210 15% 6%);
-    --surface-2: hsl(210 15% 10%);
-    --surface-hover: hsl(210 15% 14%);
-    --text: hsl(210 20% 90%);
-    --text-muted: hsl(210 10% 55%);
-    --text-dim: hsl(210 10% 40%);
-    --primary-color: hsl(185 100% 50%);
-    --primary-hover: hsl(185 100% 45%);
-    --accent-color: hsl(210 100% 60%);
+    --border: 220 14% 14%;
+    --input: 220 14% 10%;
+    --ring: 160 100% 50%;
+    --gain: 160 100% 50%;
+    --loss: 0 72% 58%;
+    --radius: 0.75rem;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
@@ -73,66 +38,86 @@
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  /* Performance color utilities */
-  .text-gain {
-    color: hsl(var(--gain));
-  }
-  .text-loss {
-    color: hsl(var(--loss));
-  }
+  .text-gain { color: hsl(var(--gain)); }
+  .text-loss { color: hsl(var(--loss)); }
 }
 
-/* Terminal-style scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(220 14% 18%); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(220 14% 25%); }
+
+/* Card system */
+.card-surface {
+  background: hsl(220 16% 7%);
+  border: 1px solid hsl(220 14% 12%);
+  border-radius: 0.75rem;
 }
 
-::-webkit-scrollbar-track {
-  background: hsl(210 15% 4%);
+.card-surface-raised {
+  background: hsl(220 16% 8%);
+  border: 1px solid hsl(220 14% 14%);
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-::-webkit-scrollbar-thumb {
-  background: hsl(210 15% 22%);
-  border-radius: 3px;
+/* Glow effects for top/bottom performers */
+.glow-gain {
+  border-color: hsl(160 100% 50% / 0.35) !important;
+  box-shadow: 0 0 16px hsl(160 100% 50% / 0.1), inset 0 1px 0 hsl(160 100% 50% / 0.06);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(210 15% 30%);
+.glow-loss {
+  border-color: hsl(0 72% 58% / 0.35) !important;
+  box-shadow: 0 0 16px hsl(0 72% 58% / 0.1), inset 0 1px 0 hsl(0 72% 58% / 0.06);
 }
 
-/* Terminal card styling */
-.terminal-card {
-  background: hsl(210 15% 6%);
-  border: 1px solid hsl(210 15% 18%);
-  border-radius: 0.25rem;
+/* Animated rank transitions */
+.rank-item {
+  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease;
 }
 
-.terminal-card-highlight {
-  background: hsl(210 15% 6%);
-  border: 1px solid hsl(185 100% 50% / 0.3);
-  box-shadow: 0 0 12px hsl(185 100% 50% / 0.08);
+/* Subtle press animation */
+.press-scale {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.press-scale:active {
+  transform: scale(0.97);
 }
 
-/* Mobile-first responsive utilities */
+/* Fade-in utility */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeInUp 0.35s ease-out forwards;
+}
+
+/* Pulse for live dot */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.live-dot {
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+/* Position change flash */
+@keyframes rankUp {
+  0% { background-color: hsl(160 100% 50% / 0.15); }
+  100% { background-color: transparent; }
+}
+@keyframes rankDown {
+  0% { background-color: hsl(0 72% 58% / 0.15); }
+  100% { background-color: transparent; }
+}
+.flash-up { animation: rankUp 1.2s ease-out; }
+.flash-down { animation: rankDown 1.2s ease-out; }
+
+/* Mobile utilities */
 @media (max-width: 640px) {
-  .mobile-stack {
-    flex-direction: column;
-  }
-  .mobile-full {
-    width: 100%;
-  }
-  .mobile-text-sm {
-    font-size: 0.875rem;
-  }
-  .mobile-p-2 {
-    padding: 0.5rem;
-  }
-  .mobile-gap-2 {
-    gap: 0.5rem;
-  }
+  .mobile-stack { flex-direction: column; }
+  .mobile-full { width: 100%; }
 }

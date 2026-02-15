@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 import { OnchainKitProvider } from '@coinbase/onchainkit';
 import { base } from 'viem/chains';
-import { useMiniKit } from '@coinbase/onchainkit/minikit';
-import CryptoTerminal from "../bloomberg-terminal";
+import { useMiniKit } from '@farcaster/miniapp-sdk';
+import CryptoTerminal from '../bloomberg-terminal';
 import "../app/globals.css";
 
 export default function Page() {

@@ -1,0 +1,17 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjg5NjQ1MCwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDIzMjlDMTczNjZCRjhFMTgzNjI2YmMzZUQ0MTE3YzQ4MkY2NTc2ODgifQ",
+    "payload": "eyJkb21haW4iOiJiaWctYnV5Lm1lIn0",
+    "signature": "MHg2ZThhYjNmZjU3MTg1YjEyOGEwNzA0MWU3ZTQxZjY3MzBmNzI0ZjY4YzQ3ZGU0YmQ5MzVhMmI5YzY3ZjJjNGM0MWEzMzc4MmU1MmE3YzVhOWUxMzUwMDFlNzU3ZDllMmRiYzJlNzhhZjA3YTFmYjkyMTI2OTk0NjQxYzA5NzdiMWI"
+  },
+  "frame": {
+    "version": "1",
+    "name": "Big-Buy.me",
+    "iconUrl": "https://big-buy.me/placeholder.jpg",
+    "homeUrl": "https://big-buy.me",
+    "imageUrl": "https://big-buy.me/placeholder.jpg",
+    "splashImageUrl": "https://big-buy.me/placeholder.jpg",
+    "splashBackgroundColor": "#000000",
+    "webhookUrl": "https://big-buy.me/api/webhook"
+  }
+}

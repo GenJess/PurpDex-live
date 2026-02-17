@@ -19,8 +19,7 @@ export const metadata: Metadata = {
   title: "PurpDex - Live Crypto Tracker",
   description: "Real-time cryptocurrency momentum tracking",
   generator: "v0.app",
-  other: { "base:app_id": "699444f4be0d5d2cf831b5ede" },}
-
+  other: { "base:app_id": "69944f4be0d5d2cf831b5ede" },
 export default function RootLayout({
   children,
 }: Readonly<{

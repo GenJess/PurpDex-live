@@ -14,7 +14,7 @@ export async function GET() {
       "homeUrl": "https://big-buy.me",
       "imageUrl": "https://big-buy.me/placeholder.jpg",
       "splashImageUrl": "https://big-buy.me/placeholder.jpg",
-      "splashBackgroundColor": "#000000",
+      "splashBackgroundColor": "##eeccff",
       "webhookUrl": "https://big-buy.me/api/webhook"
     }
   };
